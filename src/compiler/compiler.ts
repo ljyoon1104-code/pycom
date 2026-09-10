@@ -26,12 +26,30 @@ function compileProgram(nodes: Statement[]): Bytecode {
         expression(node.right); patch(jump, instructions.length); return;
       }
       case "list": node.values.forEach(expression); emit({ op: "build_list", count: node.values.length, ...point(node.token) }); return;
+      case "list-comprehension": {
+        const hidden = "\u0000comprehension";
+        const name = { kind: "name", id: hidden, token: node.token } as const;
+        const append = { kind: "expression", expression: { kind: "call", callee: { kind: "attribute", object: name, name: "append", token: node.token }, args: [node.element], keywords: [], token: node.token }, token: node.token } as Statement;
+        const filters = (clauses: typeof node.clauses[number]["filters"], body: Statement[]): Statement[] => clauses.reduceRight((next, condition) => [{ kind: "if", branches: [{ condition, body: next, token: node.token }], token: node.token } as Statement], body);
+        const loops = (index: number): Statement[] => {
+          if (index === node.clauses.length) return [append];
+          const clause = node.clauses[index];
+          return [{ kind: "for", target: clause.target, iterable: clause.iterable, body: filters(clause.filters, loops(index + 1)), token: clause.token } as Statement];
+        };
+        const targetNamesForComprehension = (target: Target): string[] => target.kind === "name" ? [target.id] : target.kind === "unpack" ? target.values.flatMap(targetNamesForComprehension) : [];
+        const bytecode = compileProgram([
+          { kind: "assign", targets: [name], value: { kind: "list", values: [], token: node.token }, token: node.token },
+          ...loops(0),
+          { kind: "return", value: name, token: node.token },
+        ]);
+        emit({ op: "run_comprehension", bytecode, localNames: [hidden, ...node.clauses.flatMap(clause => targetNamesForComprehension(clause.target))], ...point(node.token) }); return;
+      }
       case "tuple": node.values.forEach(expression); emit({ op: "build_tuple", count: node.values.length, ...point(node.token) }); return;
       case "dict": node.entries.forEach(entry => { expression(entry.key); expression(entry.value); }); emit({ op: "build_dict", count: node.entries.length, ...point(node.token) }); return;
       case "slice": if (node.start) expression(node.start); if (node.stop) expression(node.stop); if (node.step) expression(node.step); emit({ op: "build_slice", hasStart: !!node.start, hasStop: !!node.stop, hasStep: !!node.step, ...point(node.token) }); return;
       case "subscript": expression(node.object); expression(node.index); emit({ op: "load_subscript", ...point(node.token) }); return;
       case "attribute": expression(node.object); emit({ op: "load_attr", name: node.name, ...point(node.token) }); return;
-      case "fstring": node.parts.forEach(part => typeof part === "string" ? emit({ op: "constant", value: part, ...point(node.token) }) : expression(part)); emit({ op: "build_string", count: node.parts.length, ...point(node.token) }); return;
+      case "fstring": node.parts.forEach(part => { if (typeof part === "string") emit({ op: "constant", value: part, ...point(node.token) }); else { expression(part.expression); if (part.format) emit({ op: "format_value", format: part.format, ...point(node.token) }); } }); emit({ op: "build_string", count: node.parts.length, ...point(node.token) }); return;
       case "call":
         if (node.callee.kind === "attribute") { expression(node.callee.object); node.args.forEach(expression); emit({ op: "call_method", name: node.callee.name, argc: node.args.length, ...point(node.token) }); }
         else { expression(node.callee); node.args.forEach(expression); node.keywords.forEach(keyword => expression(keyword.value)); emit({ op: "call_value", argc: node.args.length, keywords: node.keywords.map(keyword => keyword.name), ...point(node.token) }); }
@@ -41,16 +59,21 @@ function compileProgram(nodes: Statement[]): Bytecode {
   const prepareTarget = (target: Target) => { if (target.kind === "subscript") { expression(target.object); expression(target.index); } else if (target.kind === "attribute") expression(target.object); };
   const store = (target: Target) => {
     if (target.kind === "name") emit({ op: "store", name: target.id, ...point(target.token) });
-    else if (target.kind === "unpack") emit({ op: "unpack", names: target.values.map(value => value.id), ...point(target.token) });
+    else if (target.kind === "unpack") emit({ op: "unpack", names: unpackNames(target), ...point(target.token) });
     else if (target.kind === "subscript") emit({ op: "store_subscript", ...point(target.token) }); else emit({ op: "store_attr", name: target.name, ...point(target.token) });
   };
   const storeKeepingValue = (target: Target) => {
     prepareTarget(target);
     if (target.kind === "name") emit({ op: "store_keep", name: target.id, ...point(target.token) });
-    else if (target.kind === "unpack") emit({ op: "unpack", names: target.values.map(value => value.id), ...point(target.token) });
+    else if (target.kind === "unpack") emit({ op: "unpack", names: unpackNames(target), ...point(target.token) });
     else if (target.kind === "subscript") emit({ op: "store_subscript_keep", ...point(target.token) }); else emit({ op: "store_attr_keep", name: target.name, ...point(target.token) });
   };
-  const targetNames = (target: Target) => target.kind === "name" ? [target.id] : target.kind === "unpack" ? target.values.map(value => value.id) : undefined;
+  const unpackLeaves = (target: Target): Exclude<Target, { kind: "unpack" }>[] => target.kind === "unpack" ? target.values.flatMap(unpackLeaves) : [target];
+  const unpackNames = (target: Target): string[] => {
+    const leaves = unpackLeaves(target); if (!leaves.every(leaf => leaf.kind === "name")) throw new CompilerError({ line: target.token.line, column: target.token.column, category: "syntax", message: "이 위치에서는 변수 언패킹만 사용할 수 있습니다." });
+    return leaves.map(leaf => (leaf as Extract<Target, { kind: "name" }>).id);
+  };
+  const targetNames = (target: Target) => target.kind === "name" ? [target.id] : target.kind === "unpack" ? (() => { const leaves = unpackLeaves(target); return leaves.every(leaf => leaf.kind === "name") ? leaves.map(leaf => (leaf as Extract<Target, { kind: "name" }>).id) : undefined; })() : undefined;
   const body = (statements: Statement[]) => statements.forEach(statement);
   const cleanupForTransfer = (targetDepth: number, token: { line: number; column: number }) => {
     exceptionNames.slice(targetDepth).flat().reverse().forEach(name => emit({ op: "clear_exception", name, ...point(token) }));
@@ -64,7 +87,13 @@ function compileProgram(nodes: Statement[]): Bytecode {
     if (node.kind === "return") { if (node.value) expression(node.value); else emit({ op: "constant", value: null, ...point(node.token) }); cleanupForTransfer(0, node.token); emit({ op: "return_value", ...point(node.token) }); return; }
     if (node.kind === "global") return;
     if (node.kind === "assign") {
-      if (node.targets.length === 1) { prepareTarget(node.targets[0]); expression(node.value); store(node.targets[0]); }
+      if (node.targets.length === 1 && node.targets[0].kind === "unpack") {
+        const leaves = unpackLeaves(node.targets[0]);
+        const names = leaves.map((_, index) => `\u0000unpack${index}`);
+        expression(node.value); emit({ op: "unpack", names, ...point(node.token) });
+        leaves.forEach((target, index) => { prepareTarget(target); emit({ op: "load", name: names[index], ...point(target.token) }); store(target); });
+      }
+      else if (node.targets.length === 1) { prepareTarget(node.targets[0]); expression(node.value); store(node.targets[0]); }
       else { expression(node.value); node.targets.forEach(storeKeepingValue); emit({ op: "pop", ...point(node.token) }); }
       return;
     }
@@ -94,4 +123,4 @@ function compileProgram(nodes: Statement[]): Bytecode {
   return { instructions };
 }
 
-function localNames(nodes: Statement[], params: string[], globals: string[]): string[] { const names = new Set(params); const add = (target: Target) => { if (target.kind === "name") names.add(target.id); else if (target.kind === "unpack") target.values.forEach(value => names.add(value.id)); }; const visit = (items: Statement[]) => items.forEach(node => { if (node.kind === "assign") node.targets.forEach(add); else if (node.kind === "augassign") add(node.target); else if (node.kind === "for") { add(node.target); visit(node.body); } else if (node.kind === "if") { node.branches.forEach(branch => visit(branch.body)); if (node.otherwise) visit(node.otherwise); } else if (node.kind === "while") visit(node.body); }); visit(nodes); globals.forEach(name => names.delete(name)); return [...names]; }
+function localNames(nodes: Statement[], params: string[], globals: string[]): string[] { const names = new Set(params); const add = (target: Target) => { if (target.kind === "name") names.add(target.id); else if (target.kind === "unpack") target.values.forEach(add); }; const visit = (items: Statement[]) => items.forEach(node => { if (node.kind === "assign") node.targets.forEach(add); else if (node.kind === "augassign") add(node.target); else if (node.kind === "for") { add(node.target); visit(node.body); } else if (node.kind === "if") { node.branches.forEach(branch => visit(branch.body)); if (node.otherwise) visit(node.otherwise); } else if (node.kind === "while") visit(node.body); }); visit(nodes); globals.forEach(name => names.delete(name)); return [...names]; }

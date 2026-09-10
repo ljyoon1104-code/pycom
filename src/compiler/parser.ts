@@ -1,4 +1,4 @@
-import type { Expr, Name, Program, Statement, Target } from "./ast";
+import type { Expr, FStringFormat, Name, Program, Statement, Target } from "./ast";
 import { lex } from "./lexer";
 import { CompilerError, type Token } from "./token";
 
@@ -17,10 +17,17 @@ export class Parser {
   private match(value: string) { return this.cur().lexeme === value ? this.advance() : undefined; }
   private skip() { while (this.cur().kind === "newline") this.advance(); }
   parse(): Program { this.skip(); return { kind: "program", body: this.statements("eof") }; }
-  private end() { if (!["newline", "eof", "dedent"].includes(this.cur().kind)) this.fail(this.cur(), "문장 끝에 줄바꿈이 필요합니다."); this.skip(); }
+  private end() {
+    let separated = false;
+    while (this.match(";")) separated = true;
+    if (separated && ["if", "for", "while", "def", "class", "try", "with"].includes(this.cur().lexeme)) this.fail(this.cur(), "세미콜론 뒤에는 복합문을 사용할 수 없습니다.", "unsupported");
+    if (separated && !["newline", "eof", "dedent"].includes(this.cur().kind)) return;
+    if (!["newline", "eof", "dedent"].includes(this.cur().kind)) this.fail(this.cur(), "문장 끝에 줄바꿈이 필요합니다.");
+    this.skip();
+  }
   private statements(end: "eof" | "dedent"): Statement[] {
     const body: Statement[] = [];
-    while (this.cur().kind !== end && this.cur().kind !== "eof") { if (this.cur().kind === "indent") this.fail(this.cur(), "예상하지 않은 들여쓰기입니다."); const node = this.statement(); body.push(node); if (!["if", "while", "for", "function", "class", "with", "try"].includes(node.kind)) this.end(); }
+    while (this.cur().kind !== end && this.cur().kind !== "eof") { while (this.match(";")) {} if (this.cur().kind === "newline") { this.skip(); continue; } if (this.cur().kind === "indent") this.fail(this.cur(), "예상하지 않은 들여쓰기입니다."); const node = this.statement(); body.push(node); if (!["if", "while", "for", "function", "class", "with", "try"].includes(node.kind)) this.end(); }
     if (end === "dedent") { if (this.cur().kind !== "dedent") this.fail(this.cur(), "들여쓴 본문이 필요합니다."); this.advance(); }
     return body;
   }
@@ -44,7 +51,8 @@ export class Parser {
       }
       const targets = [first];
       while (true) {
-        const mark = this.index, next = this.assignmentTarget();
+        const mark = this.index; let next: Target | undefined;
+        try { next = this.assignmentTarget(); } catch (error) { if (!(error instanceof CompilerError)) throw error; this.index = mark; break; }
         if (next && this.cur().lexeme === "=") { targets.push(next); this.advance(); continue; }
         this.index = mark; break;
       }
@@ -62,24 +70,35 @@ export class Parser {
     return { kind: "tuple", values, token: (first as { token: Token }).token };
   }
   private assignmentTarget(): Target | undefined {
-    if (this.cur().lexeme === "[" && this.peek().kind !== "identifier") return undefined;
+    const first = this.assignmentTargetAtom();
+    if (!first) return undefined;
+    const values = [first];
+    while (this.match(",")) { const next = this.assignmentTargetAtom(); if (!next) this.fail(this.cur(), "대입 대상이 필요합니다."); values.push(next); }
+    return values.length === 1 ? first : { kind: "unpack", values, token: first.token };
+  }
+  private assignmentTargetAtom(): Target | undefined {
+    if (this.cur().lexeme === "(" && this.peek().kind !== "identifier" && this.peek().lexeme !== "[" && this.peek().lexeme !== "(") return undefined;
+    if (this.match("(")) {
+      const target = this.assignmentTarget();
+      if (!target) this.fail(this.cur(), "대입 대상이 필요합니다.");
+      if (!this.match(")")) this.fail(this.cur(), "닫는 괄호가 필요합니다.");
+      return target;
+    }
+    if (this.cur().lexeme === "[" && this.peek().kind !== "identifier" && this.peek().lexeme !== "[" && this.peek().lexeme !== "(") return undefined;
     if (this.match("[")) {
-      const values: Name[] = [];
-      if (this.cur().kind !== "identifier") this.fail(this.cur(), "변수 이름이 필요합니다.");
-      while (true) { const token = this.advance(); values.push({ kind: "name", id: token.lexeme, token }); if (this.match("]")) break; if (!this.match(",")) this.fail(this.cur(), "쉼표 또는 닫는 대괄호가 필요합니다."); if (this.cur().kind !== "identifier") this.fail(this.cur(), "변수 이름이 필요합니다."); }
-      return { kind: "unpack", values, token: values[0].token };
+      const target = this.assignmentTarget();
+      if (!target) this.fail(this.cur(), "대입 대상이 필요합니다.");
+      if (!this.match("]")) this.fail(this.cur(), "닫는 대괄호가 필요합니다.");
+      return target.kind === "unpack" ? target : { kind: "unpack", values: [target], token: target.token };
     }
     if (this.cur().kind !== "identifier") return undefined;
     const firstToken = this.advance(), first: Name = { kind: "name", id: firstToken.lexeme, token: firstToken };
-    const values = [first];
-    while (this.match(",")) { if (this.cur().kind !== "identifier") this.fail(this.cur(), "변수 이름이 필요합니다."); const token = this.advance(); values.push({ kind: "name", id: token.lexeme, token }); }
-    if (values.length > 1) return { kind: "unpack", values, token: firstToken };
     let node: Expr = first;
     while (true) { if (this.match("[")) { node = { kind: "subscript", object: node, index: this.subscript(firstToken), token: firstToken }; continue; } if (this.match(".")) { const name = this.cur(); if (name.kind !== "identifier") this.fail(name, "속성 이름이 필요합니다."); this.advance(); node = { kind: "attribute", object: node, name: name.lexeme, token: name }; continue; } break; }
     return node.kind === "name" || node.kind === "subscript" || node.kind === "attribute" ? node : undefined;
   }
   private classStmt(): Statement { const token = this.advance(), name = this.cur(); if (name.kind !== "identifier") this.fail(name, "클래스 이름이 필요합니다."); this.advance(); if (this.cur().lexeme === "(") this.fail(this.cur(), "상속은 현재 버전에서 지원하지 않습니다.", "unsupported"); const body = this.suite(token); for (const statement of body) if (!(["assign", "function", "pass"] as string[]).includes(statement.kind)) this.fail((statement as { token: Token }).token, "클래스 본문에는 속성 대입, 메서드 정의, pass만 사용할 수 있습니다."); return { kind: "class", name: name.lexeme, body, token }; }
-  private functionStmt(): Statement { const token = this.advance(); const name = this.cur(); if (name.kind !== "identifier") this.fail(name, "함수 이름이 필요합니다."); this.advance(); if (!this.match("(")) this.fail(this.cur(), "함수 이름 뒤에는 '('가 필요합니다."); const params: { name: string; defaultValue?: Expr; token: Token }[] = [], names = new Set<string>(); let defaultSeen = false; if (!this.match(")")) while (true) { const parameter = this.cur(); if (parameter.kind !== "identifier") this.fail(parameter, "매개변수 이름이 필요합니다."); this.advance(); if (names.has(parameter.lexeme)) this.fail(parameter, "같은 매개변수 이름을 두 번 사용할 수 없습니다."); names.add(parameter.lexeme); let defaultValue: Expr | undefined; if (this.match("=")) { defaultSeen = true; defaultValue = this.expression(); } else if (defaultSeen) this.fail(parameter, "기본값 있는 매개변수 뒤에는 기본값 없는 매개변수를 둘 수 없습니다."); params.push({ name: parameter.lexeme, defaultValue, token: parameter }); if (this.match(")")) break; if (!this.match(",")) this.fail(this.cur(), "쉼표 또는 닫는 괄호가 필요합니다."); } this.functionDepth++; const body = this.suite(token); this.functionDepth--; const seen = new Set(params.map(parameter => parameter.name)), globals: string[] = []; const remember = (target: Target) => { if (target.kind === "name") seen.add(target.id); else if (target.kind === "unpack") target.values.forEach(value => seen.add(value.id)); }; for (const statement of body) { if (statement.kind === "global") { for (const global of statement.names) { if (seen.has(global)) this.fail(statement.token, "지역 변수로 사용한 이름은 global로 선언할 수 없습니다."); if (!globals.includes(global)) globals.push(global); } } else if (statement.kind === "assign") statement.targets.forEach(remember); else if (statement.kind === "augassign") remember(statement.target); else if (statement.kind === "for") remember(statement.target); } for (const parameter of params) if (globals.includes(parameter.name)) this.fail(parameter.token, "매개변수 이름은 global로 선언할 수 없습니다."); return { kind: "function", name: name.lexeme, params, body, globals, token }; }
+  private functionStmt(): Statement { const token = this.advance(); const name = this.cur(); if (name.kind !== "identifier") this.fail(name, "함수 이름이 필요합니다."); this.advance(); if (!this.match("(")) this.fail(this.cur(), "함수 이름 뒤에는 '('가 필요합니다."); const params: { name: string; defaultValue?: Expr; token: Token }[] = [], names = new Set<string>(); let defaultSeen = false; if (!this.match(")")) while (true) { const parameter = this.cur(); if (parameter.kind !== "identifier") this.fail(parameter, "매개변수 이름이 필요합니다."); this.advance(); if (names.has(parameter.lexeme)) this.fail(parameter, "같은 매개변수 이름을 두 번 사용할 수 없습니다."); names.add(parameter.lexeme); let defaultValue: Expr | undefined; if (this.match("=")) { defaultSeen = true; defaultValue = this.expression(); } else if (defaultSeen) this.fail(parameter, "기본값 있는 매개변수 뒤에는 기본값 없는 매개변수를 둘 수 없습니다."); params.push({ name: parameter.lexeme, defaultValue, token: parameter }); if (this.match(")")) break; if (!this.match(",")) this.fail(this.cur(), "쉼표 또는 닫는 괄호가 필요합니다."); } this.functionDepth++; const body = this.suite(token); this.functionDepth--; const seen = new Set(params.map(parameter => parameter.name)), globals: string[] = []; const remember = (target: Target): void => { if (target.kind === "name") seen.add(target.id); else if (target.kind === "unpack") target.values.forEach(remember); }; for (const statement of body) { if (statement.kind === "global") { for (const global of statement.names) { if (seen.has(global)) this.fail(statement.token, "지역 변수로 사용한 이름은 global로 선언할 수 없습니다."); if (!globals.includes(global)) globals.push(global); } } else if (statement.kind === "assign") statement.targets.forEach(remember); else if (statement.kind === "augassign") remember(statement.target); else if (statement.kind === "for") remember(statement.target); } for (const parameter of params) if (globals.includes(parameter.name)) this.fail(parameter.token, "매개변수 이름은 global로 선언할 수 없습니다."); return { kind: "function", name: name.lexeme, params, body, globals, token }; }
   private ifStmt(): Statement { const token = this.advance(), condition = this.expression(), branches = [{ condition, body: this.suite(token), token }]; let otherwise: Statement[] | undefined; while (this.cur().lexeme === "elif") { const branchToken = this.advance(); branches.push({ condition: this.expression(), body: this.suite(branchToken), token: branchToken }); } if (this.cur().lexeme === "else") { const branchToken = this.advance(); otherwise = this.suite(branchToken); } return { kind: "if", branches, otherwise, token }; }
   private whileStmt(): Statement { const token = this.advance(); return { kind: "while", condition: this.expression(), body: this.suite(token), token }; }
   private forStmt(): Statement { const token = this.advance(), target = this.assignmentTarget(); if (!target) this.fail(this.cur(), "for 뒤에는 변수 이름이 필요합니다."); if (!this.match("in")) this.fail(this.cur(), "for 문에는 in이 필요합니다."); return { kind: "for", target, iterable: this.expression(), body: this.suite(token), token }; }
@@ -112,9 +131,57 @@ export class Parser {
   }
   private postfix(node: Expr): Expr { while (true) { if (this.match("(")) { const args: Expr[] = [], keywords: { name: string; value: Expr; token: Token }[] = [], names = new Set<string>(); let keywordSeen = false; if (!this.match(")")) while (true) { if (this.cur().kind === "identifier" && this.peek().lexeme === "=") { const token = this.advance(); this.advance(); if (names.has(token.lexeme)) this.fail(token, "같은 키워드 인수를 두 번 전달할 수 없습니다."); names.add(token.lexeme); keywordSeen = true; keywords.push({ name: token.lexeme, value: this.expression(), token }); } else { if (keywordSeen) this.fail(this.cur(), "키워드 인수 뒤에는 위치 인수를 둘 수 없습니다."); args.push(this.expression()); } if (this.match(")")) break; if (!this.match(",")) this.fail(this.cur(), "쉼표 또는 닫는 괄호가 필요합니다."); if (this.match(")")) break; } node = { kind: "call", callee: node, args, keywords, token: (node as { token: Token }).token }; continue; } if (this.match("[")) { node = { kind: "subscript", object: node, index: this.subscript((node as { token: Token }).token), token: (node as { token: Token }).token }; continue; } if (this.match(".")) { const name = this.cur(); if (name.kind !== "identifier") this.fail(name, "속성 이름이 필요합니다."); this.advance(); node = { kind: "attribute", object: node, name: name.lexeme, token: name }; continue; } break; } return node; }
   private subscript(token: Token): Expr | Extract<Expr, { kind: "slice" }> { let start: Expr | undefined, stop: Expr | undefined, step: Expr | undefined; if (this.cur().lexeme !== ":" && this.cur().lexeme !== "]") start = this.expression(); if (this.match(":")) { if (this.cur().lexeme !== ":" && this.cur().lexeme !== "]") stop = this.expression(); if (this.match(":")) if (this.cur().lexeme !== "]") step = this.expression(); if (!this.match("]")) this.fail(this.cur(), "닫는 대괄호가 필요합니다."); return { kind: "slice", start, stop, step, token }; } if (!this.match("]")) this.fail(this.cur(), "닫는 대괄호가 필요합니다."); if (!start) this.fail(token, "인덱스가 필요합니다."); return start; }
-  private sequence(token: Token): Expr { const values: Expr[] = []; if (!this.match("]")) while (true) { values.push(this.expression()); if (this.match("]")) break; if (!this.match(",")) this.fail(this.cur(), "쉼표 또는 닫는 대괄호가 필요합니다."); if (this.match("]")) break; } return { kind: "list", values, token }; }
+  private sequence(token: Token): Expr {
+    if (this.match("]")) return { kind: "list", values: [], token };
+    const first = this.expression();
+    if (this.cur().lexeme === "for") {
+      const clauses: { target: Target; iterable: Expr; filters: Expr[]; token: Token }[] = [];
+      while (this.cur().lexeme === "for") {
+        const forToken = this.advance(), target = this.assignmentTarget();
+        if (!target) this.fail(this.cur(), "리스트 내포의 for 뒤에는 변수 이름이 필요합니다.");
+        const validTarget = (value: Target): boolean => value.kind === "name" || (value.kind === "unpack" && value.values.every(validTarget));
+        if (!validTarget(target)) this.fail(forToken, "리스트 내포에는 변수 대입만 사용할 수 있습니다.");
+        if (!this.match("in")) this.fail(this.cur(), "리스트 내포의 for에는 in이 필요합니다.");
+        const iterable = this.expression(), filters: Expr[] = [];
+        while (this.cur().lexeme === "if") { this.advance(); filters.push(this.expression()); }
+        clauses.push({ target, iterable, filters, token: forToken });
+      }
+      if (!this.match("]")) this.fail(this.cur(), "리스트 내포의 닫는 대괄호가 필요합니다.");
+      return { kind: "list-comprehension", element: first, clauses, token };
+    }
+    const values = [first];
+    while (!this.match("]")) { if (!this.match(",")) this.fail(this.cur(), "쉼표 또는 닫는 대괄호가 필요합니다."); if (this.match("]")) break; values.push(this.expression()); }
+    return { kind: "list", values, token };
+  }
   private paren(token: Token): Expr { if (this.match(")")) return { kind: "tuple", values: [], token }; const first = this.expression(); if (!this.match(",")) { if (!this.match(")")) this.fail(this.cur(), "닫는 괄호가 필요합니다."); return first; } const values = [first]; while (!this.match(")")) { values.push(this.expression()); if (!this.match(",")) { if (!this.match(")")) this.fail(this.cur(), "닫는 괄호가 필요합니다."); break; } } return { kind: "tuple", values, token }; }
   private dict(token: Token): Expr { const entries: { key: Expr; value: Expr }[] = []; if (!this.match("}")) while (true) { const key = this.expression(); if (!this.match(":")) this.fail(this.cur(), "딕셔너리 키 뒤에는 ':'이 필요합니다."); entries.push({ key, value: this.expression() }); if (this.match("}")) break; if (!this.match(",")) this.fail(this.cur(), "쉼표 또는 닫는 중괄호가 필요합니다."); if (this.match("}")) break; } return { kind: "dict", entries, token }; }
-  private fstring(token: Token): Expr { const source = String(token.value ?? ""), parts: (string | Expr)[] = []; let text = ""; for (let index = 0; index < source.length; index++) { const char = source[index]; if (char === "{") { if (source[index + 1] === "{") { text += "{"; index++; continue; } if (text) { parts.push(text); text = ""; } const end = source.indexOf("}", index + 1); if (end < 0) this.fail(token, "f-string의 '}'가 필요합니다."); const expression = source.slice(index + 1, end); if (!expression.trim()) this.fail(token, "f-string의 중괄호 안에는 표현식이 필요합니다."); if (expression.includes(":")) this.fail(token, "f-string 형식 지정은 지원하지 않습니다."); try { const program = new Parser(lex(expression)).parse(); if (program.body.length !== 1 || program.body[0].kind !== "expression") this.fail(token, "f-string 표현식이 올바르지 않습니다."); parts.push(program.body[0].expression); } catch (error) { if (error instanceof CompilerError) this.fail(token, "f-string 표현식이 올바르지 않습니다."); throw error; } index = end; continue; } if (char === "}") { if (source[index + 1] === "}") { text += "}"; index++; continue; } this.fail(token, "f-string의 단독 '}'는 사용할 수 없습니다."); } text += char; } if (text) parts.push(text); return { kind: "fstring", parts, token }; }
+  private fstring(token: Token): Expr {
+    const source = String(token.value ?? ""), parts: (string | { expression: Expr; format?: FStringFormat })[] = [];
+    let text = "";
+    for (let index = 0; index < source.length; index++) {
+      const char = source[index];
+      if (char === "{") {
+        if (source[index + 1] === "{") { text += "{"; index++; continue; }
+        if (text) { parts.push(text); text = ""; }
+        const end = source.indexOf("}", index + 1); if (end < 0) this.fail(token, "f-string의 '}'가 필요합니다.");
+        const raw = source.slice(index + 1, end), separator = raw.indexOf(":"), expression = separator < 0 ? raw : raw.slice(0, separator), spec = separator < 0 ? undefined : raw.slice(separator + 1);
+        if (!expression.trim()) this.fail(token, "f-string의 중괄호 안에는 표현식이 필요합니다.");
+        let format: FStringFormat | undefined;
+        if (spec !== undefined) {
+          const align = /^([<>^])([1-9][0-9]*)$/.exec(spec), zero = /^0([1-9][0-9]*)$/.exec(spec), fixed = /^\.([0-9]+)f$/.exec(spec);
+          if (align) format = { kind: "align", align: align[1] as "<" | ">" | "^", width: Number(align[2]) };
+          else if (zero) format = { kind: "zero", width: Number(zero[1]) };
+          else if (fixed) format = { kind: "fixed", precision: Number(fixed[1]) };
+          else this.fail(token, "지원하지 않는 f-string 형식입니다.");
+        }
+        try { const program = new Parser(lex(expression)).parse(); if (program.body.length !== 1 || program.body[0].kind !== "expression") this.fail(token, "f-string 표현식이 올바르지 않습니다."); parts.push({ expression: program.body[0].expression, format }); }
+        catch (error) { if (error instanceof CompilerError) this.fail(token, "f-string 표현식이 올바르지 않습니다."); throw error; }
+        index = end; continue;
+      }
+      if (char === "}") { if (source[index + 1] === "}") { text += "}"; index++; continue; } this.fail(token, "f-string의 단독 '}'는 사용할 수 없습니다."); }
+      text += char;
+    }
+    if (text) parts.push(text); return { kind: "fstring", parts, token };
+  }
 }
 export const parse = (tokens: Token[]) => new Parser(tokens).parse();

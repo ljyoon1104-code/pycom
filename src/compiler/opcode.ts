@@ -15,6 +15,7 @@ export type Instruction =
   | ({ op: "make_class"; name: string; bytecode: Bytecode } & SourcePoint)
   | ({ op: "return_value" } & SourcePoint)
   | ({ op: "build_string"; count: number } & SourcePoint)
+  | ({ op: "format_value"; format: import("./ast").FStringFormat } & SourcePoint)
   | ({ op: "pop" } & SourcePoint)
   | ({ op: "jump"; target: number } & SourcePoint)
   | ({ op: "jump_if_false"; target: number } & SourcePoint)
@@ -38,6 +39,7 @@ export type Instruction =
   | ({ op: "pop_except" } & SourcePoint)
   | ({ op: "clear_exception"; name: string } & SourcePoint)
   | ({ op: "unpack"; names: string[] } & SourcePoint)
+  | ({ op: "run_comprehension"; bytecode: Bytecode; localNames: string[] } & SourcePoint)
   | ({ op: "loop_guard" } & SourcePoint);
 export interface Bytecode { instructions: Instruction[]; }
 export type CompileResult = { bytecode: Bytecode } | { error: StudentError };

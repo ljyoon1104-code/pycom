@@ -30,7 +30,7 @@ export function lex(source: string): Token[] {
       const three = text.slice(index, index + 3), two = text.slice(index, index + 2);
       if (["**=", "//="].includes(three)) { add("operator", three, line, column); index += 3; column += 3; continue; }
       if (["==", "!=", "<=", ">=", "//", "**", "+=", "-=", "*=", "/=", "%="].includes(two)) { add("operator", two, line, column); index += 2; column += 2; continue; }
-      if ("+-*/%=<>() ,:[]{}.".includes(char) && char !== " ") { if (char === "(" || char === "[" || char === "{") brackets.push(char); if (char in matching) { const open = brackets.pop(); if (open !== matching[char]) syntax(line, column, "괄호 종류가 맞지 않습니다."); } add("(),:[]{}.".includes(char) ? "punctuation" : "operator", char, line, column); index++; column++; continue; }
+      if ("+-*/%=<>() ,:[]{}.;".includes(char) && char !== " ") { if (char === "(" || char === "[" || char === "{") brackets.push(char); if (char in matching) { const open = brackets.pop(); if (open !== matching[char]) syntax(line, column, "괄호 종류가 맞지 않습니다."); } add("(),:[]{}.;".includes(char) ? "punctuation" : "operator", char, line, column); index++; column++; continue; }
       syntax(line, column, "이 문자는 사용할 수 없습니다.");
     }
     if (row < lines.length - 1 && brackets.length === 0) add("newline", "\n", line, text.length + 1);
