@@ -1,0 +1,17 @@
+import { describe, expect, it } from "vitest";
+import { compile } from "../compiler/compiler";
+import { VM, type VMEvent } from "./vm";
+const run = (code: string) => { const events: VMEvent[] = []; new VM(compile(code), event => events.push(event)).execute(); return events; };
+const text = (code: string) => run(code).filter((event): event is Extract<VMEvent, { type: "output" }> => event.type === "output").map(event => event.text).join("");
+describe("7단계 예외", () => {
+  it("bare except와 else를 처리한다", () => expect(text('try:\n    value = int("x")\nexcept:\n    print("오류")\nelse:\n    print("성공")\nprint("계속")')).toBe("오류\n계속\n"));
+  it("특정 오류와 as 오류 객체를 처리한다", () => expect(text('try:\n    print(10 / 0)\nexcept ZeroDivisionError as error:\n    print(str(error))')).toBe("0으로 나눌 수 없습니다.\n"));
+  it("여러 except와 함수 프레임 오류를 처리한다", () => expect(text('def divide(a, b):\n    return a / b\ntry:\n    print(divide(10, 0))\nexcept IndexError:\n    print("인덱스")\nexcept ZeroDivisionError:\n    print("0")')).toBe("0\n"));
+  it("with 파일을 닫고 오류를 전달한다", () => expect(text('try:\n    with open("memo.txt", "w") as file:\n        file.write("저장")\n        print(10 / 0)\nexcept ZeroDivisionError:\n    print(file.closed)')).toBe("True\n"));
+  it("처리되지 않은 오류는 종류와 줄을 유지한다", () => expect(run('value = 1\nvalue()').at(-1)).toMatchObject({ type: "error", error: { category: "type", line: 2 } }));
+  it("문법 오류와 bare except 위치 오류를 컴파일 시 거부한다", () => { expect(() => compile('try:\n    pass')).toThrow(); expect(() => compile('try:\n    pass\nexcept:\n    pass\nexcept ValueError:\n    pass')).toThrow(); });
+  it("except as 오류 변수는 종료 후 제거한다", () => expect(text('error = "기존 값"\ntry:\n    print(10 / 0)\nexcept ZeroDivisionError as error:\n    print("처리됨")\ntry:\n    print(error)\nexcept NameError:\n    print("오류 변수 제거됨")')).toBe("처리됨\n오류 변수 제거됨\n"));
+  it("출력·명령 제한은 except로 잡을 수 없다", () => { const outputLimit = run('try:\n    while True:\n        print("반복")\nexcept:\n    print("제한을 잡았습니다.")'); expect(outputLimit.at(-1)).toMatchObject({ type: "error", error: { category: "runtime" } }); expect(outputLimit.filter((event): event is Extract<VMEvent, { type: "output" }> => event.type === "output").map(event => event.text).join("")).not.toContain("제한을 잡았습니다."); const loopLimit = run('try:\n    while True:\n        pass\nexcept Exception:\n    print("계속 실행")'); expect(loopLimit.at(-1)).toMatchObject({ type: "error", error: { category: "runtime" } }); });
+  it("break와 continue로 except를 나가도 오류 변수를 정리한다", () => { expect(text('for number in range(1):\n    try:\n        print(10 / 0)\n    except ZeroDivisionError as error:\n        break\ntry:\n    print(error)\nexcept NameError:\n    print("break 정리 완료")')).toBe("break 정리 완료\n"); expect(text('for number in range(1):\n    try:\n        print(10 / 0)\n    except ZeroDivisionError as error:\n        continue\ntry:\n    print(error)\nexcept NameError:\n    print("continue 정리 완료")')).toBe("continue 정리 완료\n"); });
+  it("continue는 실제로 벗어나는 except 영역만 정리한다", () => { expect(text('try:\n    print(10 / 0)\nexcept ZeroDivisionError as error:\n    for number in range(2):\n        continue\n    print(str(error))')).toBe("0으로 나눌 수 없습니다.\n"); expect(text('try:\n    print(10 / 0)\nexcept ZeroDivisionError as outer_error:\n    for number in range(1):\n        try:\n            print(missing_name)\n        except NameError as inner_error:\n            continue\n    print(str(outer_error))\ntry:\n    print(inner_error)\nexcept NameError:\n    print("안쪽 오류 제거됨")')).toBe("0으로 나눌 수 없습니다.\n안쪽 오류 제거됨\n"); });
+});
