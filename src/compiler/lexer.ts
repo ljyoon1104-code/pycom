@@ -3,6 +3,8 @@ import { CompilerError, type Token } from "./token";
 const reserved = new Set(["True", "False", "None", "and", "or", "not", "if", "elif", "else", "while", "for", "in", "break", "continue", "def", "return", "global", "class", "pass", "with", "as", "try", "except"]);
 const syntax = (line: number, column: number, message: string): never => { throw new CompilerError({ line, column, category: "syntax", message }); };
 const matching: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
+const identifierStart = /[\p{L}_]/u;
+const identifierPart = /[\p{L}\p{N}_]/u;
 
 export function lex(source: string): Token[] {
   const tokens: Token[] = [], levels = [0], brackets: string[] = [];
@@ -23,7 +25,7 @@ export function lex(source: string): Token[] {
       const start = column;
       if (/[0-9]/.test(char)) { let raw = ""; while (/[0-9]/.test(text[index] ?? "")) { raw += text[index++]; column++; } if (text[index] === "." && /[0-9]/.test(text[index + 1] ?? "")) { raw += text[index++]; column++; while (/[0-9]/.test(text[index] ?? "")) { raw += text[index++]; column++; } } add("number", raw, line, start, Number(raw)); continue; }
       if ((char === "f" || char === "F") && (text[index + 1] === "'" || text[index + 1] === '"')) { const quote = text[index + 1]; let raw = char + quote, value = "", closed = false; index += 2; column += 2; while (index < text.length) { const next = text[index++]; column++; raw += next; if (next === quote) { closed = true; break; } if (next === "\\") { const escaped = text[index++]; column++; raw += escaped ?? ""; const escapes: Record<string, string> = { n: "\n", t: "\t", "\\": "\\", "'": "'", '"': '"' }; if (!(escaped in escapes)) syntax(line, column - 1, "지원하지 않는 이스케이프 문자입니다."); value += escapes[escaped]; } else value += next; } if (!closed) syntax(line, start, "닫는 f-string 따옴표가 필요합니다."); add("fstring", raw, line, start, value); continue; }
-      if (/[A-Za-z_]/.test(char)) { let name = ""; while (/[A-Za-z0-9_]/.test(text[index] ?? "")) { name += text[index++]; column++; } add(reserved.has(name) ? "keyword" : "identifier", name, line, start); continue; }
+      if (identifierStart.test(char)) { let name = ""; while (identifierPart.test(text[index] ?? "")) { name += text[index++]; column++; } add(reserved.has(name) ? "keyword" : "identifier", name, line, start); continue; }
       if (char === "'" || char === '"') { const quote = char; let raw = quote, value = "", closed = false; index++; column++; while (index < text.length) { const next = text[index++]; column++; raw += next; if (next === quote) { closed = true; break; } if (next === "\\") { const escaped = text[index++]; column++; raw += escaped ?? ""; const escapes: Record<string, string> = { n: "\n", t: "\t", "\\": "\\", "'": "'", '"': '"' }; if (!(escaped in escapes)) syntax(line, column - 1, "지원하지 않는 이스케이프 문자입니다."); value += escapes[escaped]; } else value += next; } if (!closed) syntax(line, start, "닫는 따옴표가 필요합니다."); add("string", raw, line, start, value); continue; }
       const three = text.slice(index, index + 3), two = text.slice(index, index + 2);
       if (["**=", "//="].includes(three)) { add("operator", three, line, column); index += 3; column += 3; continue; }
