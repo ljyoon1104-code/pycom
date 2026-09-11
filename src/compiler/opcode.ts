@@ -1,6 +1,7 @@
 import type { StudentError } from "./token";
 export type SourcePoint = { line: number; column: number };
 export type Instruction =
+  | ({ op: "import_module"; module: string; member?: string } & SourcePoint)
   | ({ op: "constant"; value: unknown } & SourcePoint)
   | ({ op: "load"; name: string } & SourcePoint)
   | ({ op: "dup" } & SourcePoint)
@@ -32,7 +33,7 @@ export type Instruction =
   | ({ op: "load_attr"; name: string } & SourcePoint)
   | ({ op: "store_attr"; name: string } & SourcePoint)
   | ({ op: "store_attr_keep"; name: string } & SourcePoint)
-  | ({ op: "call_method"; name: string; argc: number } & SourcePoint)
+  | ({ op: "call_method"; name: string; argc: number; keywords: string[] } & SourcePoint)
   | ({ op: "enter_with"; name: string } & SourcePoint)
   | ({ op: "exit_with" } & SourcePoint)
   | ({ op: "setup_except"; handlers: { type?: string; name?: string; target: number }[] } & SourcePoint)

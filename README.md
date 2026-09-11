@@ -25,3 +25,14 @@
 ## 웹 앱과 오프라인 사용
 
 일반 웹 주소로 접속해도 모든 기능을 사용할 수 있습니다. 처음 온라인으로 접속한 뒤에는 브라우저 메뉴의 **홈 화면에 추가** 또는 **앱 설치**를 선택해 앱처럼 열 수 있습니다. iPhone·iPad에서는 공유 버튼에서 **홈 화면에 추가**를 선택하세요.
+
+## 기본 표준 라이브러리 (11단계)
+
+- 허용된 모듈은 앱에 포함된 `random`, `datetime`뿐입니다. 일반 사용자 모듈·외부 패키지·네트워크 import는 지원하지 않습니다.
+- `import random as rnd`, `import datetime`, `from datetime import date as Date`를 사용할 수 있습니다. 지원하지 않는 가져오기는 `ImportError`로 처리합니다.
+- `random.seed`, `randint`, `randrange`, `choice`, `sample`을 지원합니다. 실행별 Mulberry32 상태를 사용하며 같은 시드·호출 순서는 재현됩니다. CPython과 시드별 난수열이 같다는 의미는 아니며 보안용 난수가 아닙니다.
+- `sample`은 원본 위치를 중복 선택하지 않는 비복원 추출이며 원본을 변경하지 않습니다. Python처럼 원본에 같은 값이 여러 번 들어 있다면 서로 다른 위치의 같은 값이 선택될 수 있습니다. 한 번에 최대 10000개를 선택합니다.
+- `date(year, month, day)`, `date.today()`, 연·월·일 속성, 문자열 출력, 날짜 비교를 지원합니다. 오늘은 학생 기기의 현지 날짜입니다. 테스트는 VM의 시계 공급자를 주입하며 시스템 시간을 바꾸지 않습니다.
+- 두 모듈은 Worker 번들에 포함되어 오프라인에서도 실행됩니다. 모듈·날짜 속성은 읽기 전용이며 전체 random API, datetime.datetime, 시간대·날짜 간격, EUC-KR, turtle은 제외합니다.
+
+API 의미 참고: [Python random](https://docs.python.org/3/library/random.html), [Python date](https://docs.python.org/3/library/datetime.html#date-objects).

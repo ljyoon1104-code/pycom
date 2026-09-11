@@ -2,8 +2,8 @@ import type { Expr, FStringFormat, Name, Program, Statement, Target } from "./as
 import { lex } from "./lexer";
 import { CompilerError, type Token } from "./token";
 
-const unsupported = new Set(["import", "from", "lambda"]);
-const errorTypes = new Set(["Exception", "NameError", "TypeError", "ValueError", "ZeroDivisionError", "IndexError", "KeyError", "AttributeError", "FileNotFoundError", "RuntimeError"]);
+const unsupported = new Set(["lambda"]);
+const errorTypes = new Set(["ImportError", "Exception", "NameError", "TypeError", "ValueError", "ZeroDivisionError", "IndexError", "KeyError", "AttributeError", "FileNotFoundError", "RuntimeError"]);
 const compounds = new Set(["+=", "-=", "*=", "/=", "//=", "%=", "**="]);
 const comparisons = new Set(["==", "!=", "<", "<=", ">", ">="]);
 
@@ -33,6 +33,7 @@ export class Parser {
   }
   private statement(): Statement {
     const token = this.cur();
+    if (token.lexeme === "import" || token.lexeme === "from") return this.importStmt();
     if (unsupported.has(token.lexeme)) this.fail(token, "이 문법은 현재 버전에서 지원하지 않습니다.", "unsupported");
     if (token.lexeme === "class") return this.classStmt(); if (token.lexeme === "def") return this.functionStmt(); if (token.lexeme === "if") return this.ifStmt(); if (token.lexeme === "while") return this.whileStmt(); if (token.lexeme === "for") return this.forStmt(); if (token.lexeme === "with") return this.withStmt(); if (token.lexeme === "try") return this.tryStmt();
     if (token.lexeme === "elif" || token.lexeme === "else") this.fail(token, "앞에 if 문이 없는 조건문입니다."); if (token.lexeme === "except") this.fail(token, "앞에 try 문이 없는 except입니다.");
@@ -61,6 +62,19 @@ export class Parser {
     }
     this.index = start;
     return { kind: "expression", expression: this.expression(), token };
+  }
+  private importStmt(): Statement {
+    const token = this.advance();
+    const identifier = () => { const value = this.cur(); if (value.kind !== "identifier") this.fail(value, "가져올 이름이 필요합니다."); return this.advance().lexeme; };
+    let module = identifier();
+    while (this.match(".")) module += "." + identifier();
+    let member: string | undefined;
+    if (token.lexeme === "from") {
+      if (!this.match("import")) this.fail(this.cur(), "from 뒤에는 import가 필요합니다.");
+      member = this.match("*") ? "*" : identifier();
+    }
+    const binding = this.match("as") ? identifier() : member ?? module.split(".")[0];
+    return { kind: "import", module, member, binding, token };
   }
   private assignmentValue(): Expr {
     const first = this.expression();
@@ -174,7 +188,7 @@ export class Parser {
           else if (fixed) format = { kind: "fixed", precision: Number(fixed[1]) };
           else this.fail(token, "지원하지 않는 f-string 형식입니다.");
         }
-        try { const program = new Parser(lex(expression)).parse(); if (program.body.length !== 1 || program.body[0].kind !== "expression") this.fail(token, "f-string 표현식이 올바르지 않습니다."); parts.push({ expression: program.body[0].expression, format }); }
+        try { const tokens = lex(expression).map(inner => ({ ...inner, line: token.line, column: token.column + index + 2 + inner.column, endColumn: token.column + index + 2 + inner.endColumn })); const program = new Parser(tokens).parse(); if (program.body.length !== 1 || program.body[0].kind !== "expression") this.fail(token, "f-string 표현식이 올바르지 않습니다."); parts.push({ expression: program.body[0].expression, format }); }
         catch (error) { if (error instanceof CompilerError) this.fail(token, "f-string 표현식이 올바르지 않습니다."); throw error; }
         index = end; continue;
       }

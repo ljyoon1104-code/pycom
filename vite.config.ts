@@ -2,6 +2,9 @@ import { defineConfig } from "vite";
 import { buildServiceWorker } from "./src/pwa/service-worker";
 
 export default defineConfig({
+  // All app resources are same-origin. Avoid Vary: Origin in the preview cache,
+  // which otherwise distinguishes module requests from precache requests.
+  preview: { cors: false },
   base: process.env.VITE_BASE ?? "./",
   plugins: [{
     name: "python-learning-service-worker",

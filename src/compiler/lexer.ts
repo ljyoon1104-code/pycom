@@ -1,6 +1,6 @@
 import { CompilerError, type Token } from "./token";
 
-const reserved = new Set(["True", "False", "None", "and", "or", "not", "if", "elif", "else", "while", "for", "in", "break", "continue", "def", "return", "global", "class", "pass", "with", "as", "try", "except"]);
+const reserved = new Set(["import", "from", "True", "False", "None", "and", "or", "not", "if", "elif", "else", "while", "for", "in", "break", "continue", "def", "return", "global", "class", "pass", "with", "as", "try", "except"]);
 const syntax = (line: number, column: number, message: string): never => { throw new CompilerError({ line, column, category: "syntax", message }); };
 const matching: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
 const identifierStart = /[\p{L}_]/u;

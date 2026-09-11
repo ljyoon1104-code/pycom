@@ -35,5 +35,6 @@ export interface With { kind: "with"; value: Expr; name: string; body: Statement
 export interface Try { kind: "try"; body: Statement[]; handlers: { type?: string; name?: string; body: Statement[]; token: Token }[]; otherwise?: Statement[]; token: Token; }
 export interface Pass { kind: "pass"; token: Token; }
 export interface Break { kind: "break"; token: Token; } export interface Continue { kind: "continue"; token: Token; }
-export type Statement = Assign | AugAssign | ExprStatement | If | While | For | FunctionDef | Return | Global | ClassDef | With | Try | Pass | Break | Continue;
+export interface Import { kind: "import"; module: string; member?: string; binding: string; token: Token; }
+export type Statement = Import | Assign | AugAssign | ExprStatement | If | While | For | FunctionDef | Return | Global | ClassDef | With | Try | Pass | Break | Continue;
 export interface Program { kind: "program"; body: Statement[]; }
