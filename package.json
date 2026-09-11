@@ -1,7 +1,7 @@
 {
   "name": "python-learning-lab",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "verify:pages-offline": "node scripts/verify-pages-offline.mjs",
     "verify:responsive": "node scripts/verify-responsive.mjs",
     "verify:turtle": "node scripts/verify-turtle.mjs",
+    "verify:classroom": "node scripts/verify-classroom-v1.mjs",
     "test": "vitest run"
   },
   "dependencies": {
