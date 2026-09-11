@@ -1,6 +1,7 @@
-import { isList, isRange, isTuple, type DateValue, type ModuleValue, type Value } from "./value";
+import { isList, isRange, isTuple, type DateValue, type ModuleValue, type TurtleMethodValue, type TurtleValue, type Value } from "./value";
+import { TurtleRuntime, type TurtleGraphicsCommand } from "./turtle";
 
-export interface ModuleOptions { clock?: () => Date; entropy?: () => number; }
+export interface ModuleOptions { clock?: () => Date; entropy?: () => number; emitGraphics?: (command: TurtleGraphicsCommand) => void; maxGraphicsCommands?: number; }
 export class ModuleError extends Error {
   constructor(readonly pythonType: "ImportError" | "AttributeError" | "TypeError" | "ValueError" | "IndexError", message: string) { super(message); }
 }
@@ -19,12 +20,18 @@ export class BuiltinModules {
   private state: number;
   private readonly modules = new Map<string, ModuleValue>();
   private readonly today = { kind: "builtin", name: "datetime.date.today" } as const;
+  private readonly turtle: TurtleRuntime;
   constructor(private readonly options: ModuleOptions = {}) {
     this.state = (options.entropy ?? entropy)() >>> 0;
     this.modules.set("random", { kind: "module", name: "random", attributes: new Map(
       ["seed", "randint", "randrange", "choice", "sample"].map(name => [name, { kind: "builtin", name: `random.${name}` } as Value]),
     ) });
     this.modules.set("datetime", { kind: "module", name: "datetime", attributes: new Map([["date", { kind: "builtin", name: "datetime.date" }]]) });
+    this.turtle = new TurtleRuntime(options.emitGraphics ?? (() => {}), options.maxGraphicsCommands);
+    const done = { kind: "builtin", name: "turtle.done" } as const;
+    this.modules.set("turtle", { kind: "module", name: "turtle", attributes: new Map([
+      ["Turtle", { kind: "builtin", name: "turtle.Turtle" }], ["done", done], ["mainloop", done], ["bgcolor", { kind: "builtin", name: "turtle.bgcolor" }],
+    ]) });
   }
   load(module: string, member?: string): Value {
     const value = this.modules.get(module);
@@ -37,6 +44,8 @@ export class BuiltinModules {
     if (name === "today") return this.today;
     return invalid("AttributeError", `date에 '${name}' 속성이 없습니다.`);
   }
+  turtleAttribute(turtle: TurtleValue, name: string): TurtleMethodValue { return this.turtle.methodValue(turtle, name); }
+  turtleMethod(method: TurtleMethodValue, args: Value[], keywords: Record<string, Value>): Value { return this.turtle.invokeMethod(method, args, keywords); }
   // Mulberry32: repeatable within this app, not CPython's seed-to-output sequence.
   private next(): number {
     this.state = (this.state + 0x6D2B79F5) >>> 0;
@@ -78,6 +87,9 @@ export class BuiltinModules {
       "random.seed": ["a"], "random.randint": ["a", "b"], "random.choice": ["seq"], "random.sample": ["population", "k"],
       "datetime.date": ["year", "month", "day"], "datetime.date.today": [],
     };
+    if (name === "turtle.Turtle") return this.turtle.create(args, keywords);
+    if (name === "turtle.done") return this.turtle.finish(args, keywords);
+    if (name === "turtle.bgcolor") return this.turtle.background(args, keywords);
     if (name === "random.randrange") {
       if (Object.keys(keywords).length) return invalid("TypeError", "randrange()에는 위치 인수를 사용해 주세요.");
     } else {

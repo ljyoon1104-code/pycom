@@ -33,7 +33,7 @@
 - `random.seed`, `randint`, `randrange`, `choice`, `sample`을 지원합니다. 실행별 Mulberry32 상태를 사용하며 같은 시드·호출 순서는 재현됩니다. CPython과 시드별 난수열이 같다는 의미는 아니며 보안용 난수가 아닙니다.
 - `sample`은 원본 위치를 중복 선택하지 않는 비복원 추출이며 원본을 변경하지 않습니다. Python처럼 원본에 같은 값이 여러 번 들어 있다면 서로 다른 위치의 같은 값이 선택될 수 있습니다. 한 번에 최대 10000개를 선택합니다.
 - `date(year, month, day)`, `date.today()`, 연·월·일 속성, 문자열 출력, 날짜 비교를 지원합니다. 오늘은 학생 기기의 현지 날짜입니다. 테스트는 VM의 시계 공급자를 주입하며 시스템 시간을 바꾸지 않습니다.
-- 두 모듈은 Worker 번들에 포함되어 오프라인에서도 실행됩니다. 모듈·날짜 속성은 읽기 전용이며 전체 random API, datetime.datetime, 시간대·날짜 간격, turtle은 제외합니다.
+- 두 모듈은 Worker 번들에 포함되어 오프라인에서도 실행됩니다. 모듈·날짜 속성은 읽기 전용이며 전체 random API, datetime.datetime, 시간대·날짜 간격은 제외합니다.
 
 ## EUC-KR 텍스트 가져오기 (12단계)
 
@@ -41,5 +41,13 @@
 - `open(..., encoding="euc-kr")`와 `cp949`, `euc_kr`, 대소문자 별칭으로 가져온 한글 텍스트를 읽을 수 있습니다. 앱 안에서는 안전하게 디코딩한 Unicode 텍스트를 사용합니다.
 - EUC-KR은 읽기만 지원합니다. `w`·`a` 모드와 내보내기는 UTF-8만 지원하며, EUC-KR로 쓴 것처럼 표시하지 않습니다.
 - 파일명·내용·가져오기 인코딩·원본 바이트 크기·수정 시각은 현재 기기의 IndexedDB에 저장됩니다. 기존 파일은 삭제하지 않고 UTF-8 메타데이터를 보충합니다.
+
+## 교육용 turtle 그래픽 (13단계)
+
+- `import turtle`, `turtle.Turtle()`, `turtle.done()`과 `turtle.mainloop()`를 지원합니다. 실행 결과에서 **그래픽** 탭이 자동으로 열리고, 텍스트 출력은 **텍스트** 탭에서 함께 확인할 수 있습니다.
+- 이동·회전: `forward`/`fd`, `backward`/`back`/`bk`, `right`/`rt`, `left`/`lt`, `goto`/`setposition`/`setpos`, `home`, `setheading`/`seth`를 지원합니다.
+- 펜·상태: `penup`/`up`/`pu`, `pendown`/`down`/`pd`, `pencolor`, `color`, `pensize`/`width`, `clear`, `reset`, `hideturtle`, `showturtle`, `speed`, 좌표·방향 조회를 지원합니다. 색상은 기본 색상 이름과 `#RRGGBB`만 허용합니다.
+- 그래픽 명령은 Worker가 Canvas에 직접 접근하지 않고 메인 화면으로 전달합니다. 한 실행은 최대 5000개 명령으로 제한되며, 제한 초과는 `except`로 우회할 수 없습니다.
+- `circle`, `dot`, 채우기, 키보드·마우스 이벤트, 애니메이션 콜백, 이미지 도형, 다중 화면과 전체 turtle 표준 라이브러리는 지원하지 않습니다.
 
 API 의미 참고: [Python random](https://docs.python.org/3/library/random.html), [Python date](https://docs.python.org/3/library/datetime.html#date-objects).

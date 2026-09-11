@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "verify:pages-offline": "node scripts/verify-pages-offline.mjs",
     "verify:responsive": "node scripts/verify-responsive.mjs",
+    "verify:turtle": "node scripts/verify-turtle.mjs",
     "test": "vitest run"
   },
   "dependencies": {
