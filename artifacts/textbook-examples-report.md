@@ -112,3 +112,11 @@ F: 원본 목록은 .py 63개와 .ipynb 4개. 3단원 120–153쪽 .py 56개를 
 - 최종 브라우저 실행의 JavaScript 오류, HTTP 오류, 서버 쓰기 요청은 0건이다. 새 콘텐츠는 textContent와 CodeMirror 문서로 표시하며, 외부 CDN·추적기·네트워크 인터프리터를 추가하지 않았다.
 - Service Worker의 기존 자원 해시 기반 캐시 전략을 유지한다. 예제 메타데이터와 CodeMirror는 앱 JS, 인터프리터는 Worker JS에 포함되어 모두 사전 캐시된다. IndexedDB는 예제 Runner의 의존성에 없다.
 - 재현 스크립트: scripts/audit-examples.mjs, scripts/verify-examples.mjs, scripts/verify-stage15.mjs. 로컬 스크린샷과 JSON은 artifacts/textbook-browser/에 보관하며 공개 커밋에는 포함하지 않는다.
+
+## 실제 Pages 검증 (2026-09-14)
+
+- https://ljyoon1104-code.github.io/pycom/#/examples 에서 24개 브라우저 검증 흐름을 모두 통과했다. 입력 출력은 `안녕하세요, 민수`, 임시 CSV는 `새싹 3 / 꽃 5`, turtle은 파란 사각형을 실제 Canvas에 렌더링했다.
+- 직접 접속·새로고침·뒤로/앞으로·클립보드 대체 UI·오류 줄·중지/재실행·저장 보호·데이터 충돌 정책·5개 viewport·200% 확대를 확인했다. 직접 링크 검사는 명시적으로 새로고침하며, 뒤로 가기 검사는 상세 렌더링 및 포커스 준비를 확인한 뒤 이동한다.
+- 실제 오프라인에서도 목록·검색·일반/입력/CSV/turtle 실행·편집기 가져오기·전체 백업을 수행했다. JavaScript 오류, HTTP 오류, 서버 쓰기 요청은 모두 0건이다.
+- 별도 브라우저 프로필에서 v1.1.0에 저장한 `upgrade-check.py`가 v1.2.0 접속 후에도 동일했고, 실행 결과와 1.2.0 전체 백업의 파일 내용까지 확인했다. 사용자 브라우저 프로필이나 실제 학생 파일은 사용하지 않았다.
+- 배포 브라우저 결과와 스크린샷: artifacts/textbook-pages/. 업데이트 보존 증거: artifacts/textbook-upgrade/. 브라우저 프로필·백업 JSON·스크린샷은 공개 저장소에서 제외한다.

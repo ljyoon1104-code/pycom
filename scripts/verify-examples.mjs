@@ -82,7 +82,9 @@ try {
   await page.getByRole("button", { name: "필터 초기화", exact: true }).click(); assert.equal(await page.locator(".textbook-card").count(), 56); record("topic filter / empty results / reset");
   await page.locator("#textbook-status").selectOption("corrected"); assert.equal(await page.locator(".textbook-card").count(), 6); await page.getByRole("button", { name: "필터 초기화", exact: true }).click();
   await page.evaluate(() => { location.hash = "#/examples/unknown-example"; }); await page.getByText("예제를 찾을 수 없습니다.", { exact: true }).waitFor(); await page.locator(".textbook-detail").getByRole("button", { name: "목록으로", exact: true }).click(); record("status filter and unknown direct link recovery");
-  await page.locator('[data-example-id="page-122-greeting"]').click(); await page.goBack(); await page.waitForFunction(() => document.activeElement?.getAttribute("data-example-id") === "page-122-greeting"); await page.goForward();
+  await page.locator('[data-example-id="page-122-greeting"]').click();
+  await page.waitForFunction(() => document.activeElement?.tagName === "H2" && document.querySelector('.textbook-card[aria-current]')?.getAttribute("data-example-id") === "page-122-greeting");
+  await page.goBack(); await page.waitForFunction(() => document.activeElement?.getAttribute("data-example-id") === "page-122-greeting"); await page.goForward();
   await page.waitForFunction(() => document.activeElement?.tagName === "H2"); assert.equal(await run(["민수"]), "안녕하세요, 민수\n"); record("history / focus / input and output");
   await page.locator(".example-run").click(); await page.locator("#example-answer").waitFor(); await page.locator(".example-stop").click(); assert.equal(await page.locator(".example-live").textContent(), "실행 중지"); assert.equal(await run(["민수"]), "안녕하세요, 민수\n"); record("stop then fresh run");
   await navigate("page-124-area"); await page.locator(".example-run").click(); await page.locator("#example-answer").fill("잘못된 숫자"); await page.locator(".example-input-form button").click(); await page.locator(".cm-student-error").waitFor(); assert.match(await page.locator(".example-live").textContent(), /1번째 줄:/); record("real error line / Korean live status");
@@ -138,6 +140,10 @@ try {
   }
   await page.setViewportSize({ width: 720, height: 450 }); await navigate("page-122-greeting"); await page.evaluate(() => { document.documentElement.style.zoom = "2"; }); await run(["민수"]); await layout(page); await page.screenshot({ path: `${directory}/zoom-200.png`, fullPage: true }); record("200% zoom controls");
   assert.deepEqual(errors, []); assert.deepEqual(badResponses, []); assert.deepEqual(writes, []); record("no page errors / HTTP errors / server writes");
+} catch (error) {
+  results.push({ name: "검증 중단", passed: false, message: String(error), hash: await page.evaluate(() => location.hash).catch(() => "unavailable"), focus: await page.evaluate(() => document.activeElement?.outerHTML).catch(() => "unavailable") });
+  await page.screenshot({ path: `${directory}/failure.png`, fullPage: true }).catch(() => {});
+  throw error;
 } finally {
   await writeFile(`${directory}/results.json`, JSON.stringify({ base, results, errors, badResponses, writes }, null, 2)); await browser.close();
 }
