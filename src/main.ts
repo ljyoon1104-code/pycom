@@ -1,4 +1,6 @@
 import "./styles/app.css";
+import { mountExampleBrowser } from "./examples/browser";
+import type { LearningExample } from "./examples/model";
 import { CLASSROOM_EXAMPLES, exampleDocument, rememberWelcomeClosed, shouldShowWelcome, type ClassroomExample } from "./app/classroom";
 import { APP_VERSION } from "./app/version";
 import { executionErrorCategory, formatDiagnostics, type LastExecutionCategory } from "./app/diagnostics";
@@ -306,6 +308,51 @@ setupPwa({
     };
   },
 });
+
+const textbookDataLayer = document.createElement("div");
+textbookDataLayer.className = "dialog-layer textbook-data-layer"; textbookDataLayer.hidden = true;
+textbookDataLayer.innerHTML = `<section class="save-dialog" role="dialog" aria-modal="true" aria-labelledby="textbook-data-title"><h2 id="textbook-data-title">예제 데이터 가져오기</h2><p>코드는 저장 버튼을 누르기 전까지 저장되지 않습니다. 데이터를 함께 가져오면 아래 정책으로 기기에 저장합니다.</p><label for="textbook-conflict">같은 이름의 파일 처리</label><select id="textbook-conflict"><option value="keep">기존 파일 유지</option><option value="overwrite">예제 데이터로 덮어쓰기</option><option value="rename">예제 데이터 이름 변경</option></select><p>이름을 바꾸면 코드의 open() 파일명도 직접 바꿔 주세요.</p><div><button data-import="code" type="button">코드만 가져오기</button><button data-import="data" type="button">코드와 예제 데이터 가져오기</button><button data-import="cancel" type="button">취소</button></div></section>`;
+app.querySelector(".app")!.append(textbookDataLayer);
+async function editTextbookExample(example: LearningExample): Promise<boolean> {
+  if (restoring) return false;
+  const sourceHash = location.hash;
+  let includeData = false, policy: ConflictPolicy = "keep";
+  if (example.dataFiles?.length) {
+    const choice = await new Promise<string>(resolve => {
+      const select = textbookDataLayer.querySelector<HTMLSelectElement>("select")!; select.value = "keep";
+      const done = (value: string) => { policy = select.value as ConflictPolicy; closeLayer(textbookDataLayer); resolve(value); };
+      textbookDataLayer.querySelectorAll<HTMLButtonElement>("button").forEach(button => button.onclick = () => done(button.dataset.import!));
+      openLayer(textbookDataLayer, textbookDataLayer.querySelector<HTMLButtonElement>("button")!, () => done("cancel"));
+    });
+    if (choice === "cancel" || location.hash !== sourceHash) return false;
+    includeData = choice === "data";
+  }
+  return protect(async () => {
+    if (location.hash !== sourceHash) return;
+    if (includeData) {
+      const samples = example.dataFiles!.map(file => appFile(file.name, file.content));
+      const merged = buildRestoreSet(await store.list(), createWorkspaceBackup(samples, APP_VERSION), policy);
+      await store.replaceAll(merged);
+      files = new Map(merged.map(file => [file.name, file]));
+    }
+    currentName = example.suggestedFileName; nameEl.textContent = currentName;
+    editor.setValue(example.code); setDirty(true); renderFiles(); location.hash = "#/editor";
+  });
+}
+const textbookNavigation = document.createElement("nav"); textbookNavigation.className = "textbook-nav"; textbookNavigation.setAttribute("aria-label", "학습실 페이지");
+const editorLink = document.createElement("a"); editorLink.href = "#/editor"; editorLink.textContent = "편집기";
+const textbookLink = document.createElement("a"); textbookLink.href = "#/examples"; textbookLink.textContent = "교과서 예제";
+textbookNavigation.append(editorLink, textbookLink); topbar.prepend(textbookNavigation);
+app.querySelector<HTMLButtonElement>(".files-toggle")!.addEventListener("click", () => { if (location.hash.startsWith("#/examples")) location.hash = "#/editor"; });
+const textbookHelp = document.createElement("section"); const textbookHelpTitle = document.createElement("h3"); textbookHelpTitle.textContent = "교과서 예제";
+const textbookHelpText = document.createElement("p"); textbookHelpText.textContent = "교과서 예제에서 쪽 번호·제목·문법으로 검색하고 주제로 좁힐 수 있습니다. 예제 실행은 현재 문서와 저장 파일을 건드리지 않는 임시 공간을 사용합니다. 데이터 파일도 임시로만 제공됩니다. 편집기에서 수정하기로 가져온 코드는 자동 저장되지 않습니다. 예제 링크 복사로 학생에게 직접 주소를 전달하세요. 교과서 원문이 아니라 같은 개념을 보여주는 자체 제작 코드입니다. 최초 온라인 접속 후 오프라인에서도 사용할 수 있습니다.";
+textbookHelp.append(textbookHelpTitle, textbookHelpText); helpLayer.querySelector(".dialog-scroll")!.append(textbookHelp);
+mountExampleBrowser(app.querySelector<HTMLElement>(".app")!, active => {
+  app.querySelector<HTMLElement>(".workspace")!.hidden = active;
+  app.querySelector<HTMLElement>(".app")!.classList.toggle("browsing-examples", active);
+  if (active) { textbookLink.setAttribute("aria-current", "page"); editorLink.removeAttribute("aria-current"); }
+  else { editorLink.setAttribute("aria-current", "page"); textbookLink.removeAttribute("aria-current"); }
+}, editTextbookExample);
 
 try {
   if (shouldShowWelcome(localStorage)) showWelcomeDialog();

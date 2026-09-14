@@ -11,6 +11,7 @@ export class TurtleCanvasRenderer {
     this.resizeObserver.observe(canvas);
   }
   reset(): void { this.commands = [{ type: "reset" }]; this.render(); }
+  destroy(): void { this.resizeObserver.disconnect(); this.commands = []; }
   apply(commands: TurtleGraphicsCommand[]): void { this.commands.push(...commands); this.render(); }
   private render(): void {
     const box = this.canvas.getBoundingClientRect();

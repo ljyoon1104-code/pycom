@@ -1,0 +1,42 @@
+.textbook-page { display:grid; grid-template-columns:minmax(250px, 340px) minmax(0, 1fr); max-width:1500px; width:100%; margin:auto; min-height:0; align-items:start; }
+.textbook-page[hidden], .workspace[hidden], .textbook-page [hidden] { display:none !important; }
+.textbook-list, .textbook-detail { min-width:0; padding:20px; overflow-wrap:anywhere; }
+.textbook-list { border-right:1px solid #35415a; }
+.textbook-list h1 { font-size:1.5rem; margin-top:0; }
+.textbook-page p { line-height:1.6; }
+.textbook-page label { display:block; margin:12px 0 6px; font-weight:700; }
+.textbook-page input, .textbook-page select { min-height:44px; width:100%; max-width:100%; border:1px solid #526788; border-radius:8px; padding:8px; background:#141e30; color:#e7edf7; }
+.textbook-page button { min-height:44px; background:#334864; color:#f4f8ff; padding:9px 13px; white-space:normal; }
+.textbook-list > button { margin-top:12px; }
+.textbook-cards { display:grid; gap:10px; max-height:65vh; overflow:auto; padding:4px; }
+.textbook-card { display:grid; gap:7px; color:#e7edf7; text-decoration:none; border:1px solid #394a66; border-radius:12px; padding:14px; background:#192437; }
+.textbook-card small, .textbook-card span { font-size:.85rem; color:#bdcce2; }
+.textbook-card[aria-current] { border:2px solid #82bcff; background:#233c5a; }
+.textbook-card:focus-visible { outline:3px solid #8abfff; outline-offset:1px; }
+.textbook-detail h2 { margin:18px 0; font-size:1.4rem; }
+.example-code { height:320px; min-width:0; overflow:hidden; border:1px solid #435370; border-radius:8px; }
+.example-code .cm-scroller { overflow:auto; }
+.example-code .cm-content { white-space:pre; }
+.example-code .cm-editor { height:100%; }
+.example-code .cm-gutters { background:#172337; color:#b2c4dc; border-right:1px solid #435370; }
+.example-code .cm-activeLineGutter { background:#2a3d55; }
+.example-code .cm-activeLine { background:#26374b; }
+.example-controls { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0; }
+.textbook-page .example-run { color:#092317; background:#6fe1ad; }
+.example-notice, .example-correction { padding:14px; background:#202e43; border-left:3px solid #86baff; border-radius:6px; }
+.example-expected, .example-data, .example-output { white-space:pre-wrap; overflow-wrap:anywhere; overflow:auto; max-height:280px; padding:14px; background:#0c121d; border:1px solid #34445e; border-radius:8px; }
+.example-output { min-height:72px; }
+.example-canvas { display:block; width:100%; height:320px; background:#f4f8ff; border-radius:8px; }
+.example-input-form button { margin-top:8px; }
+.example-live { color:#afd3ff; }
+.textbook-nav { display:flex; gap:8px; flex-wrap:wrap; }
+.textbook-nav a { min-height:44px; padding:11px; border-radius:8px; color:#e7edf7; background:#293b57; text-decoration:none; font-weight:700; }
+.textbook-nav a[aria-current] { background:#385e8a; }
+.browsing-examples { grid-template-rows:auto 1fr; }
+.browsing-examples .actions > button:not(.files-toggle):not(.help-toggle) { display:none; }
+.browsing-examples .filename { display:none; }
+.browsing-examples .actions button { min-height:44px; }
+.browsing-examples .dialog-layer button { min-height:44px; }
+.textbook-data-layer select { display:block; width:100%; min-height:44px; margin:8px 0; color:#edf3fd; background:#253852; border-radius:6px; }
+@media (max-width:900px) { .textbook-page { grid-template-columns:minmax(0, 1fr); } .textbook-list { border-right:0; } .textbook-page.has-detail .textbook-list { display:none; } .textbook-cards { max-height:none; } .textbook-list, .textbook-detail { padding:14px; } }
+@media (max-height:500px) { .example-code { max-height:240px; } .example-canvas { height:240px; } }

@@ -112,7 +112,7 @@ try {
   assert.equal(JSON.stringify(await storedFiles(page)), beforeFailure); report.rollback = { forcedTransactionFailure: true, allExistingFilesPreserved: true };
 
   await page.locator(".help-toggle").click(); await page.waitForFunction(() => document.querySelector(".storage-info")?.textContent?.includes("저장 파일") ?? false); assert.match(await page.locator(".storage-info").innerText(), /저장 파일/); await page.locator(".show-diagnostics").click(); await page.locator(".diagnostics-dialog").waitFor({ state: "visible" }); await page.waitForFunction(() => document.querySelector(".diagnostics-preview")?.textContent?.includes("앱 버전") ?? false); const diagnostics = await page.locator(".diagnostics-preview").innerText();
-  assert.match(diagnostics, /앱 버전: 1\.1\.0/); assert.match(diagnostics, /저장 파일 수: 10/); assert.ok(!/main\.py|수업 메모|Mozilla\/5\.0|백업 main/.test(diagnostics)); await page.locator(".diagnostics-close").click();
+  assert.ok(diagnostics.includes(`앱 버전: ${packageVersion}`)); assert.match(diagnostics, /저장 파일 수: 10/); assert.ok(!/main\.py|수업 메모|Mozilla\/5\.0|백업 main/.test(diagnostics)); await page.locator(".diagnostics-close").click();
 
   await page.evaluate(() => navigator.serviceWorker.ready); if (!await page.evaluate(() => Boolean(navigator.serviceWorker.controller))) await page.reload({ waitUntil: "networkidle" });
   const network = await cleanContext.newCDPSession(page); await network.send("Network.enable"); await network.send("Network.emulateNetworkConditions", { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 }); await cleanContext.setOffline(true);
