@@ -1,4 +1,5 @@
 import "./styles/app.css";
+import { initialCode } from "./app/initial-code";
 import { mountExampleBrowser } from "./examples/browser";
 import type { LearningExample } from "./examples/model";
 import { CLASSROOM_EXAMPLES, exampleDocument, rememberWelcomeClosed, shouldShowWelcome, type ClassroomExample } from "./app/classroom";
@@ -14,11 +15,6 @@ import { setupPwa } from "./pwa/register";
 import { TurtleCanvasRenderer } from "./graphics/turtle-canvas";
 import type { FromWorker, ToWorker } from "./runtime/protocol";
 
-const initialCode = `name = input("이름을 입력하세요: ")
-age = int(input("나이를 입력하세요: "))
-
-print("안녕하세요,", name)
-print("내년에는", age + 1, "살입니다.")`;
 const store = new IndexedDbFileStore();
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `<main class="app"><header class="topbar"><div class="filename"><span class="current-name">main.py</span><span class="modified" aria-label="수정됨"></span></div><div class="actions"><button class="files-toggle" type="button" aria-expanded="false">파일</button><button class="examples-toggle" type="button">예제</button><button class="help-toggle" type="button">도움말</button><button class="new-file" type="button">새 파일</button><button class="save" type="button">저장</button><button class="save-as" type="button">다른 이름으로</button><button class="import" type="button">가져오기</button><button class="export" type="button">내보내기</button><button class="backup-all" type="button">전체 백업</button><button class="restore-all" type="button">전체 복원</button><button class="delete-file" type="button">삭제</button><button class="stop" type="button" disabled>중지</button><button class="run" type="button">실행</button></div></header><section class="workspace"><aside class="file-panel" aria-label="파일 목록"><div class="panel-heading">파일</div><div class="file-list"></div></aside><section class="panel"><div class="panel-heading">코드 편집기</div><div class="editor-host"></div><div class="editor-tools"><button class="tab-button" type="button" aria-label="편집기에 네 칸 들여쓰기 삽입">Tab</button></div></section><section class="panel result-panel"><div class="panel-heading">실행 결과</div><div class="result-tabs" role="tablist" aria-label="실행 결과 종류"><button class="result-tab selected" data-result-tab="text" role="tab" aria-selected="true" aria-controls="text-result" type="button">텍스트</button><button class="result-tab graphics-tab" data-result-tab="graphics" role="tab" aria-selected="false" aria-controls="graphics-result" type="button" hidden>그래픽</button></div><section id="text-result" class="result-view text-view" role="tabpanel"><button class="clear" type="button">결과 지우기</button><div class="console" role="log" aria-live="polite" aria-relevant="additions text"><span class="console-empty">실행 결과가 여기에 표시됩니다.</span></div></section><section id="graphics-result" class="result-view graphics-view" role="tabpanel" hidden><p class="graphics-help" id="graphics-help">원점은 가운데이며, 위쪽이 양의 y 방향입니다.</p><div class="turtle-canvas-wrap"><canvas class="turtle-canvas" role="img" aria-label="교육용 거북이 그래픽 실행 결과" aria-describedby="graphics-help"></canvas></div></section></section></section><div class="dialog-layer save-layer" hidden><section class="save-dialog" role="dialog" aria-modal="true" aria-labelledby="save-question" aria-describedby="save-detail"><h2 id="save-question">변경 사항 저장</h2><p id="save-detail">현재 문서의 변경 사항을 저장하시겠습니까?</p><div><button data-choice="save" type="button">저장</button><button data-choice="discard" type="button">저장하지 않음</button><button data-choice="cancel" type="button">취소</button></div></section></div></main>`;

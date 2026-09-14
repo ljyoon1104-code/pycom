@@ -86,6 +86,15 @@ export class Documents {
   serialize(): string {
     return JSON.stringify({ names: this.items.flatMap(doc => doc.savedFileName ? [doc.savedFileName] : []), activeName: this.active?.savedFileName ?? null });
   }
+  restoreInitial(raw: string | null, files: ReadonlyMap<string, AppFile>): boolean {
+    if (this.restore(raw, files)) return true;
+    // Older users may have saved files but no tab-session record.
+    const file = files.get("main.py") ?? [...files.values()].find(file => file.name.endsWith(".py")) ?? files.values().next().value;
+    if (!file) return false;
+    this.items.splice(0); this.activeId = "";
+    this.open(file);
+    return true;
+  }
   restore(raw: string | null, files: ReadonlyMap<string, AppFile>): boolean {
     let session: { names?: unknown; activeName?: unknown };
     try { session = JSON.parse(raw ?? "null"); } catch { return false; }

@@ -86,7 +86,9 @@ export class DocumentTabs {
   initialize(files: Map<string, AppFile>): void {
     // Do not replace edits made while IndexedDB was opening.
     if (this.documents.items.length === 1 && !this.dirty && this.active.fileName === "main.py") {
-      try { if (this.documents.restore(localStorage.getItem(DOCUMENT_SESSION_KEY), files)) this.display(); } catch { /* storage settings may be disabled */ }
+      let session: string | null = null;
+      try { session = localStorage.getItem(DOCUMENT_SESSION_KEY); } catch { /* storage settings may be disabled */ }
+      if (this.documents.restoreInitial(session, files)) this.display();
     }
     this.ready = true; this.render();
   }
