@@ -18,7 +18,7 @@ const bytes = (text: string) => new TextEncoder().encode(text).length;
 export const appFile = (name: string, content: string, updatedAt = Date.now(), encoding: StoredEncoding = "utf-8", byteSize = bytes(content)): AppFile => ({ name, content, updatedAt, encoding, byteSize });
 export const migrateFile = (file: LegacyAppFile): AppFile => appFile(file.name, file.content, file.updatedAt, file.encoding ?? "utf-8", file.byteSize ?? bytes(file.content));
 
-export const validFileName = (name: string): boolean => !!name.trim() && !/[\\/:*?"<>|]/.test(name) && !name.includes("..") && !/^[a-zA-Z]:/.test(name);
+export const validFileName = (name: string): boolean => !!name.trim() && !/[\\/:*?"<>|\u0000-\u001f\u007f]/.test(name) && !name.includes("..") && !/^[a-zA-Z]:/.test(name);
 export const normalizeName = (name: string): string => { const trimmed = name.trim(); return /\.(py|txt|csv)$/i.test(trimmed) ? trimmed : `${trimmed}.py`; };
 
 export class MemoryFileStore implements FileStore {
@@ -53,7 +53,15 @@ export class IndexedDbFileStore implements FileStore {
   }
   private async transaction<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
     const db = await this.open();
-    return new Promise((resolve, reject) => { const request = action(db.transaction("files", mode).objectStore("files")); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction("files", mode);
+      let result: T;
+      transaction.oncomplete = () => resolve(result);
+      transaction.onabort = () => reject(transaction.error ?? new Error("file-transaction-aborted"));
+      transaction.onerror = () => { /* The final abort event reports failed persistence. */ };
+      try { const request = action(transaction.objectStore("files")); request.onsuccess = () => { result = request.result; }; }
+      catch (error) { try { transaction.abort(); } catch { /* Already finished. */ } reject(error); }
+    });
   }
   async list(): Promise<AppFile[]> { return (await this.transaction<LegacyAppFile[]>("readonly", store => store.getAll())).map(migrateFile).sort((a, b) => a.name.localeCompare(b.name, "ko")); }
   async get(name: string): Promise<AppFile | undefined> { const file = await this.transaction<LegacyAppFile | undefined>("readonly", store => store.get(name)); return file && migrateFile(file); }

@@ -59,10 +59,11 @@ async function layout(p) {
 }
 try {
   await page.goto(base); await welcome(page);
-  await code('print("학생 원본")'); await page.locator(".save").click(); await page.locator(".run").click(); await page.waitForFunction(() => !document.querySelector(".run").disabled); const mainOutput = await page.locator(".console").textContent();
+  await code('print("학생 원본")'); await page.locator(".save").click(); await page.locator(".name-input").fill("main.py"); await page.locator(".name-confirm").click(); await page.waitForFunction(() => !document.querySelector(".modified").textContent.includes("*")); await page.locator(".run").click(); await page.waitForFunction(() => !document.querySelector(".run").disabled);
   await code("학생의 CSV"); await page.locator(".save-as").click(); await page.locator(".name-input").fill("observations.csv"); await page.locator(".name-confirm").click();
   await page.locator(".file-item").filter({ hasText: "main.py" }).click();
   await code('print("미저장 학생 문서")');
+  const mainOutput = await page.locator(".console").textContent();
   const original = await stored();
   await page.locator('.textbook-nav a[href="#/examples"]').click();
   await page.locator("#textbook-search").fill("153"); assert.equal(await page.locator(".textbook-card").count(), 3);
@@ -93,22 +94,21 @@ try {
   // Re-establish unsaved state after the intentional direct-link full navigation above.
   await page.locator('.textbook-nav a[href="#/editor"]').click(); await code('print("미저장 학생 문서")');
   await navigate("page-121-conversion"); await page.locator(".example-correction").waitFor(); await run();
-  await page.locator(".example-edit").click(); await page.locator('.save-layer [data-choice="cancel"]').click();
-  assert.equal(await page.locator(".textbook-page").isVisible(), true); assert.match(await page.locator(".editor-host").textContent(), /미저장 학생 문서/);
-  await page.locator(".example-edit").click(); await page.locator('.save-layer [data-choice="discard"]').click();
-  await page.locator(".editor-host").waitFor(); assert.equal(await page.locator(".current-name").textContent(), "121-conversion.py"); assert.match(await page.locator(".modified").textContent(), /\*/); assert.deepEqual(await stored(), original); record("corrected note / cancel / discard / import without autosave");
-  await navigate("page-122-print"); await page.locator(".example-edit").click(); await page.locator('.save-layer [data-choice="save"]').click(); await page.locator(".editor-host").waitFor();
-  assert.ok((await stored()).some(file => file.name === "121-conversion.py")); record("save previous document before importing code");
+  await page.locator(".example-edit").click();
+  await page.locator(".editor-host").waitFor(); assert.equal(await page.locator(".current-name").textContent(), "121-conversion.py"); assert.match(await page.locator(".modified").textContent(), /\*/); assert.deepEqual(await stored(), original);
+  await page.locator('.document-tabs [role="tab"]').filter({ hasText: "main.py" }).click(); assert.match(await page.locator(".editor-host").textContent(), /미저장 학생 문서/); record("corrected note / new tab import preserves existing dirty document without autosave");
+  await navigate("page-122-print"); await page.locator(".example-edit").click(); await page.locator(".editor-host").waitFor();
+  assert.ok(!(await stored()).some(file => file.name === "121-conversion.py")); record("additional example imports do not implicitly save previous tabs");
   await navigate("page-124-csv"); await page.locator(".example-edit").click(); await page.locator('[data-import="cancel"]').click(); assert.equal(await page.locator(".textbook-page").isVisible(), true);
   for (const policy of ["keep", "rename", "overwrite"]) {
     await page.locator(".example-edit").click(); await page.locator("#textbook-conflict").selectOption(policy); await page.locator('[data-import="data"]').click();
-    await page.locator('.save-layer [data-choice="discard"]').click(); await page.locator(".editor-host").waitFor();
+    await page.locator(".editor-host").waitFor();
     const all = await stored(); assert.equal(all.find(f => f.name === "observations.csv").content, policy === "overwrite" ? "대상,개수\r\n새싹,3\r\n꽃,5\r\n" : "학생의 CSV");
     if (policy === "rename") assert.ok(all.some(f => f.name !== "observations.csv" && f.content.startsWith("대상,개수")));
     await navigate("page-124-csv");
   }
   record("data import cancel and keep/rename/overwrite policies");
-  await page.locator(".example-edit").click(); await page.locator('[data-import="code"]').click(); await page.locator('.save-layer [data-choice="discard"]').click(); await page.locator(".editor-host").waitFor();
+  await page.locator(".example-edit").click(); await page.locator('[data-import="code"]').click(); await page.locator(".editor-host").waitFor();
   const editorBefore = await page.locator(".editor-host").textContent(); await navigate("page-153-turtle-square"); await run(); await page.locator('.textbook-nav a[href="#/editor"]').click(); assert.equal(await page.locator(".editor-host").textContent(), editorBefore); record("navigation preserves imported dirty code / code-only option");
   await page.locator(".examples-toggle").click(); assert.equal(await page.locator(".example-item").count(), 11); await page.locator(".examples-close").click(); record("11 basic examples retained");
   const beforeOffline = await stored();
@@ -122,7 +122,7 @@ try {
   for (const [id, answers] of [["page-120-accumulate", []], ["page-122-greeting", ["민수"]], ["page-124-csv", []], ["page-153-turtle-square", []]]) { await navigate(id); await run(answers); if (id.includes("turtle")) await shape(); }
   await page.reload(); await page.locator(".example-run").waitFor(); await run(); await shape(); assert.deepEqual(await stored(), beforeOffline);
   await page.locator(".example-edit").click(); await page.locator(".editor-host").waitFor(); assert.match(await page.locator(".modified").textContent(), /\*/);
-  await page.locator(".backup-all").click(); const downloadPromise = page.waitForEvent("download"); await page.locator('.save-layer [data-choice="discard"]').click(); const download = await downloadPromise; assert.match(download.suggestedFilename(), /backup.json$/); record("offline list/search/direct reload/normal/input/data/turtle/import/backup and student files");
+  await page.locator(".backup-all").click(); const downloadPromise = page.waitForEvent("download"); await page.locator('.document-dialog-layer [data-choice="discard"]').click(); const download = await downloadPromise; assert.match(download.suggestedFilename(), /backup.json$/); record("offline list/search/direct reload/normal/input/data/turtle/import/backup and student files");
   await context.setOffline(false); await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   for (const [width, height] of [[360, 800], [800, 360], [768, 1024], [1024, 768], [1440, 900]]) {
     const ctx = await browser.newContext({ viewport: { width, height } }), p = await ctx.newPage();
@@ -134,7 +134,7 @@ try {
       await p.locator(".example-edit").click(); await p.locator(".editor-host").waitFor(); await navigate("page-124-csv", p); await p.locator(".example-edit").click();
       const dialog = await p.locator(".textbook-data-layer .save-dialog").boundingBox(); assert.ok(dialog.x >= 0 && dialog.y >= 0 && dialog.x + dialog.width <= width && dialog.y + dialog.height <= height);
       await p.keyboard.press("Escape"); await p.locator(".example-edit").click(); await p.locator('[data-import="code"]').click();
-      await p.locator('.save-layer [data-choice="save"]').waitFor(); await p.keyboard.press("Shift+Tab"); assert.equal(await p.evaluate(() => document.activeElement.dataset.choice), "cancel"); await p.keyboard.press("Tab"); assert.equal(await p.evaluate(() => document.activeElement.dataset.choice), "save"); await p.keyboard.press("Escape");
+      await p.locator(".editor-host").waitFor(); await p.locator(".backup-all").click(); await p.locator('.document-dialog-layer [data-choice="save"]').waitFor(); await p.keyboard.press("Shift+Tab"); assert.equal(await p.evaluate(() => document.activeElement.dataset.choice), "cancel"); await p.keyboard.press("Tab"); assert.equal(await p.evaluate(() => document.activeElement.dataset.choice), "save"); await p.keyboard.press("Escape");
     }
     record(`viewport ${width}x${height}: actual rendering/input/output/touch layout`); await ctx.close();
   }

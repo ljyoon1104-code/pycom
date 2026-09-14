@@ -1,0 +1,108 @@
+import assert from "node:assert/strict";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { chromium } from "playwright-core";
+
+const url = process.env.TABS_URL ?? "http://127.0.0.1:4174/pycom/";
+const output = process.env.TABS_ARTIFACTS ?? "artifacts/document-tabs";
+await mkdir(output, { recursive: true });
+const browser = await chromium.launch({ executablePath: join(process.env["PROGRAMFILES(X86)"] ?? process.env.PROGRAMFILES, "Microsoft/Edge/Application/msedge.exe"), headless: true });
+const results = [], errors = [], requests = [], badResponses = [];
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+const page = await context.newPage();
+page.on("pageerror", error => errors.push(error.message));
+page.on("request", request => { if (!["GET", "HEAD"].includes(request.method())) requests.push(request.url()); });
+page.on("response", response => { if (response.status() >= 400) badResponses.push(response.url()); });
+page.on("dialog", dialog => dialog.accept());
+const record = name => { results.push({ name, passed: true }); console.log(`PASS ${name}`); };
+const tab = (p, name) => p.locator('.document-tabs [role="tab"]').filter({ has: p.locator(".document-tab-name", { hasText: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) }) });
+const name = p => p.locator(".current-name").textContent();
+const text = p => p.locator(".editor-host .cm-line").allTextContents().then(lines => lines.join("\n"));
+async function code(p, value) { await p.locator(".editor-host .cm-content").click(); await p.keyboard.press("Control+A"); await p.keyboard.press("Backspace"); await p.keyboard.insertText(value); assert.equal(await text(p), value); }
+async function welcome(p) { await p.locator(".editor-host .cm-content").waitFor(); if (await p.locator(".welcome-dialog").isVisible()) await p.locator(".welcome-close").click(); }
+async function save(p, filename, as = false) { await p.locator(as ? ".save-as" : ".save").click(); if (filename) { await p.locator(".document-dialog-layer .name-input").fill(filename); await p.locator('.document-dialog-layer [data-choice="name"]').click(); } await p.waitForFunction(() => !document.querySelector(".modified").textContent.includes("*")); }
+async function newDoc(p, value = "") { await p.locator(".document-add").click(); if (value) await code(p, value); return name(p); }
+const files = p => p.evaluate(() => new Promise((resolve, reject) => { const request = indexedDB.open("python-learning-lab-files", 2); request.onerror = () => reject(request.error); request.onsuccess = () => { const db = request.result, tx = db.transaction("files"), all = tx.objectStore("files").getAll(); all.onsuccess = () => resolve(all.result); tx.oncomplete = () => db.close(); }; }));
+async function run(p, answers = []) { await p.locator(".run").click(); for (const answer of answers) { await p.locator(".console-input").fill(answer); await p.locator(".input-submit").click(); } await p.waitForFunction(() => document.querySelector(".stop").disabled); return p.locator(".console").textContent(); }
+async function close(p, filename, choice) { await tab(p, filename).locator("..").locator(".document-close").click(); if (choice) await p.locator(`.document-dialog-layer [data-choice="${choice}"]`).click(); if (choice === "save" || choice === "discard") await tab(p, filename).waitFor({ state: "detached" }); }
+async function restore(p, path) { const pending = p.waitForEvent("filechooser"); await p.locator(".restore-all").click(); await (await pending).setFiles(path); await p.locator(".restore-confirm").click(); }
+async function dialogInside(p) { const box = await p.locator('.document-dialog-layer [role="dialog"]').boundingBox(); const size = p.viewportSize(); assert.ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= size.width + 1 && box.y + box.height <= size.height + 1); }
+async function offline(ctx, p, value) { const cdp = await ctx.newCDPSession(p); await cdp.send("Network.enable"); await ctx.setOffline(value); await cdp.send("Network.emulateNetworkConditions", { offline: value, latency: 0, downloadThroughput: value ? 0 : -1, uploadThroughput: value ? 0 : -1 }); return cdp; }
+async function layout(p) {
+  assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, "page horizontal overflow");
+  const panelOverlap = await p.locator(".workspace > .panel").evaluateAll(nodes => { const [a, b] = nodes.map(n => n.getBoundingClientRect()); return a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1; }); assert.equal(panelOverlap, false, "editor and result panels overlap");
+  const invalid = await p.locator(".topbar button,.document-add,.document-opened,.input-submit,.console-input").evaluateAll(nodes => nodes.filter(n => n.getClientRects().length).filter(n => { const r = n.getBoundingClientRect(); return r.left < -1 || r.right > innerWidth + 1 || r.width < 1; }).map(n => n.className));
+  assert.deepEqual(invalid, []);
+  const overlaps = await p.locator(".topbar button,.topbar a,.document-add,.document-opened").evaluateAll(nodes => { const boxes = nodes.filter(n => n.getClientRects().length).map(n => ({ label: n.textContent, r: n.getBoundingClientRect() })); return boxes.flatMap((a, i) => boxes.slice(i + 1).filter(b => a.r.left < b.r.right - 1 && a.r.right > b.r.left + 1 && a.r.top < b.r.bottom - 1 && a.r.bottom > b.r.top + 1).map(b => [a.label, b.label])); }); assert.deepEqual(overlaps, []);
+}
+
+try {
+  await page.goto(url); await welcome(page);
+  assert.equal(await tab(page, "main.py").count(), 1); assert.deepEqual(await files(page), []); record("initial tab and no automatic persistence");
+  await code(page, 'print("main saved")'); await save(page, "main.py");
+  await newDoc(page, 'print("student saved")'); await save(page, "student.py");
+  await newDoc(page, "메모 원본"); await save(page, "memo.txt");
+  const original = await files(page);
+  for (const [filename, value] of [["main.py", 'print("main draft")'], ["student.py", 'print("student draft")'], ["memo.txt", "메모 초안"]]) { await tab(page, filename).click(); await code(page, value); }
+  assert.equal(await page.locator('.document-tabs [aria-label*="저장되지 않은 변경 있음"]').count(), 3); assert.deepEqual(await files(page), original); record("three independent dirty buffers / no autosave");
+  await tab(page, "student.py").click(); await save(page); assert.match(await tab(page, "main.py").getAttribute("aria-label"), /변경 있음/); assert.match(await tab(page, "memo.txt").getAttribute("aria-label"), /변경 있음/); record("save active document only");
+  await tab(page, "main.py").click(); await page.locator(".editor-host .cm-content").focus(); await page.keyboard.press("Control+End"); await page.keyboard.insertText("\n# undo marker");
+  const selection = await page.evaluate(() => window.getSelection()?.anchorOffset);
+  await tab(page, "memo.txt").click(); await tab(page, "main.py").click(); await page.locator(".editor-host .cm-content").focus(); await page.keyboard.press("Control+z"); assert.equal(await text(page), 'print("main draft")'); await page.keyboard.press("Control+y"); assert.match(await text(page), /undo marker/); record("per-document undo redo and selection state");
+  await close(page, "main.py", "cancel"); assert.equal(await tab(page, "main.py").count(), 1); assert.match(await text(page), /undo marker/);
+  await close(page, "main.py", "save"); assert.equal(await tab(page, "main.py").count(), 0); await page.locator(".file-item").filter({ hasText: /^main.py/ }).click(); assert.match(await text(page), /undo marker/); await page.locator(".file-item").filter({ hasText: /^main.py/ }).click(); assert.equal(await tab(page, "main.py").count(), 1); record("close cancel / save and close / reopen without duplicates");
+  await page.locator(".save-as").click(); await page.locator(".document-dialog-layer .name-input").fill("student.py"); await page.locator('[data-choice="name"]').click(); await page.getByText("다른 탭에서 열린 파일 이름입니다. 다른 이름을 선택해 주세요.", { exact: true }).waitFor(); assert.equal(await name(page), "main.py"); record("save-as open-name conflict leaves names and content intact");
+  await save(page, "lesson.py", true); assert.ok((await files(page)).some(f => f.name === "main.py")); assert.equal(await name(page), "lesson.py"); record("save-as retains original stored file");
+  await code(page, 'name = input("이름: ")\nprint(f"안녕하세요, {name}")'); await page.locator(".run").click(); await page.locator(".console-input").waitFor(); assert.match(await tab(page, "lesson.py").getAttribute("aria-label"), /실행 중/);
+  await tab(page, "student.py").click(); assert.match(await page.locator(".input-owner").textContent(), /lesson.py/); assert.equal(await page.locator(".run").isEnabled(), true);
+  await tab(page, "lesson.py").click(); await page.locator(".console-input").fill("민수"); await page.locator(".input-submit").click(); await page.waitForFunction(() => document.querySelector(".stop").disabled); assert.match(await page.locator(".console").textContent(), /안녕하세요, 민수/); assert.equal(await page.locator(".execution-owner").textContent(), "실행: lesson.py"); record("input after switching away and back remains attached to originating Worker and result");
+  await tab(page, "lesson.py").click(); await page.locator(".run").click(); await page.locator(".console-input").waitFor(); await tab(page, "student.py").click(); assert.match(await run(page), /student draft/); assert.equal(await page.locator(".input-row").count(), 0); record("new run from other tab stops prior input session");
+  await tab(page, "lesson.py").click(); await code(page, 'input("대기: ")\nprint(missing)'); await page.locator(".run").click(); await page.locator(".console-input").waitFor(); await tab(page, "student.py").click(); await page.locator(".console-input").fill("x"); await page.locator(".input-submit").click(); await page.locator(".console-error").waitFor(); assert.equal(await page.locator(".editor-host .cm-student-error").count(), 0); await tab(page, "lesson.py").click(); assert.equal(await page.locator(".editor-host .cm-student-error").count(), 1); record("error decoration belongs to execution document, not active tab");
+  await tab(page, "memo.txt").click(); await save(page); await newDoc(page, 'with open("memo.txt", "w") as f:\n    f.write("런타임 저장")'); assert.match(await run(page), /완료/); await page.waitForFunction(() => document.querySelector(".console").textContent.includes("완료")); await tab(page, "memo.txt").click(); await page.waitForFunction(() => document.querySelector(".editor-host").textContent.includes("런타임 저장")); record("clean open file reloads successful Python file write");
+  await code(page, "편집 초안 유지"); const writer = await newDoc(page, 'with open("memo.txt", "w") as f:\n    f.write("외부 새 내용")'); await run(page); await tab(page, "memo.txt").click(); await page.locator(".document-warning").waitFor({ state: "visible" }); assert.equal(await text(page), "편집 초안 유지"); await page.getByRole("button", { name: "저장된 내용 다시 불러오기", exact: true }).click(); assert.equal(await text(page), "외부 새 내용"); record("dirty file conflict preserves buffer; explicit reload resolves conflict");
+  await code(page, "삭제 후 보존"); await page.locator(".delete-file").click(); await page.locator('[data-choice="keep"]').click(); assert.equal(await text(page), "삭제 후 보존"); assert.ok(!(await files(page)).some(f => f.name === "memo.txt")); record("delete dirty saved file retains unsaved document when selected");
+  await page.locator(".document-opened").click(); assert.ok(await page.locator(".opened-file-row").count() >= 3); await page.keyboard.press("Escape"); assert.equal(await page.locator(".opened-dialog-layer").isVisible(), false); record("open files menu and Escape focus return");
+  const oldCount = await page.locator('.document-tabs [role="tab"]').count(), beforeExample = await files(page);
+  await code(page, 'input("예제 페이지 이동 전 대기: ")'); await page.locator(".run").click(); await page.locator(".console-input").waitFor();
+  await page.goto(`${url}#/examples`); await page.locator("#textbook-search").waitFor(); assert.equal(await page.locator(".stop").isDisabled(), true); assert.equal(await page.locator(".input-row").count(), 0); record("entering examples ends editor Worker before isolated example execution");
+  await page.goto(`${url}#/examples/page-153-turtle-square`); await page.locator(".example-edit").click(); await page.locator(".editor-host").waitFor(); assert.equal(await page.locator('.document-tabs [role="tab"]').count(), oldCount + 1); assert.deepEqual(await files(page), beforeExample); await run(page); await page.locator(".turtle-canvas").scrollIntoViewIfNeeded(); await page.screenshot({ path: `${output}/turtle-import.png`, fullPage: true }); record("textbook 153 opens new dirty tab and runs real turtle without persistence");
+  await page.goto(`${url}#/examples/page-153-turtle-square`); await page.locator(".example-edit").click(); assert.match(await name(page), / 2\.py$/); record("repeated example import uses unique name");
+  await page.locator(".backup-all").click(); await page.locator('.document-dialog-layer [data-choice="save"]').waitFor(); await dialogInside(page); const dirtyNames = await page.locator(".document-dialog-detail").textContent(); assert.match(dirtyNames, /파일이 \d+개/); await page.keyboard.press("Shift+Tab"); assert.equal(await page.evaluate(() => document.activeElement.dataset.choice), "cancel"); await page.keyboard.press("Tab"); assert.equal(await page.evaluate(() => document.activeElement.dataset.choice), "save"); await page.keyboard.press("Escape"); record("all-dirty protection lists names, traps focus, Escape cancels");
+  // Real browser beforeunload dismisses navigation and preserves all buffers.
+  page.removeAllListeners("dialog"); page.once("dialog", async dialog => { assert.equal(dialog.type(), "beforeunload"); await dialog.dismiss(); });
+  await page.reload({ timeout: 2000 }).catch(() => {}); assert.equal(await page.locator('.document-tabs [role="tab"]').count(), oldCount + 2); page.on("dialog", dialog => dialog.accept()); record("beforeunload protects dirty tabs");
+  const downloadWait = page.waitForEvent("download"); await page.locator(".backup-all").click(); await page.locator('[data-choice="discard"]').click(); const download = await downloadWait; const backupPath = join(output, "saved-files.pylab-backup.json"); await download.saveAs(backupPath); const backup = JSON.parse(await readFile(backupPath, "utf8")); assert.ok(!JSON.stringify(backup).includes("삭제 후 보존")); record("backup contains saved files only, never tab drafts");
+  const session = await page.evaluate(() => localStorage.getItem("python-learning-lab-document-session-v1")); assert.deepEqual(Object.keys(JSON.parse(session)).sort(), ["activeName", "names"]); assert.ok(!session.includes("삭제 후 보존"));
+  const savedBefore = await files(page); await page.reload(); await welcome(page); assert.deepEqual(await files(page), savedBefore); assert.equal(await page.locator('.document-tabs [role="tab"]').count(), JSON.parse(session).names.length); assert.equal(await page.locator('.document-tabs [aria-label*="변경 있음"]').count(), 0); record("reload restores saved tab names/order using latest IDB content, discards drafts only after warning");
+  // Protect all tabs during restore, then explicitly allow saved-file restore.
+  await code(page, 'print("restore protected draft")'); await restore(page, backupPath); await page.locator('[data-choice="cancel"]').click(); assert.match(await text(page), /restore protected/); assert.deepEqual(await files(page), savedBefore); record("restore cancel protects dirty tabs and existing files");
+  await restore(page, backupPath); await page.locator('[data-choice="discard"]').click(); await page.getByText(/전체 복원이 완료되었습니다/).waitFor(); assert.equal(await page.locator('.document-tabs [aria-label*="변경 있음"]').count(), 0); record("explicit restore reconciles saved tabs and preserves backup files");
+  await page.evaluate(() => navigator.serviceWorker.ready); await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+  let cdp = await offline(context, page, true); await page.reload(); await welcome(page); if (await page.evaluate(() => navigator.onLine)) { await offline(context, page, false); cdp = await offline(context, page, true); } await page.waitForFunction(() => !navigator.onLine);
+  await newDoc(page, 'name = input("이름: ")\nprint(f"안녕하세요, {name}")'); assert.match(await run(page, ["민수"]), /안녕하세요, 민수/); await save(page, "offline.py");
+  await newDoc(page, 'with open("offline.txt", "w") as f:\n    f.write("오프라인 저장")\nwith open("offline.txt", "r") as f:\n    print(f.read())'); assert.match(await run(page), /오프라인 저장/); await tab(page, "offline.py").click(); assert.match(await run(page, ["민수"]), /안녕하세요, 민수/); record("offline new tab / explicit save / tab switch / input / VFS I/O");
+  await code(page, 'print("오프라인 현재 탭 수정 저장")'); await save(page); assert.equal((await files(page)).find(f => f.name === "offline.py").content, 'print("오프라인 현재 탭 수정 저장")');
+  const offlineDraft = await newDoc(page, 'print("오프라인 미저장")'); await close(page, offlineDraft, "cancel"); assert.equal(await tab(page, offlineDraft).count(), 1);
+  page.removeAllListeners("dialog"); page.once("dialog", async dialog => { assert.equal(dialog.type(), "beforeunload"); await dialog.dismiss(); }); await page.reload({ timeout: 2000 }).catch(() => {}); assert.equal(await tab(page, offlineDraft).count(), 1); page.on("dialog", dialog => dialog.accept()); await close(page, offlineDraft, "discard"); record("offline current-tab save / close cancellation / native reload warning / explicit close discard");
+  await page.goto(`${url}#/examples/page-153-turtle-square`); await page.locator(".example-edit").click(); await run(page); await page.screenshot({ path: `${output}/offline-turtle.png`, fullPage: true });
+  const offDownload = page.waitForEvent("download"); await page.locator(".backup-all").click(); await page.locator('[data-choice="discard"]').click(); const offBackup = await offDownload; const offPath = join(output, "offline.pylab-backup.json"); await offBackup.saveAs(offPath);
+  await restore(page, offPath); await page.locator('[data-choice="discard"]').click(); await page.waitForFunction(() => document.querySelectorAll('.document-tabs [aria-label*="변경 있음"]').length === 0); record("offline textbook import / turtle / backup / restore");
+  await page.reload(); await welcome(page); assert.ok((await files(page)).some(f => f.name === "offline.py")); assert.ok(await tab(page, "offline.py").count()); record("offline cached reload preserves saved tabs and files");
+  await offline(context, page, false);
+  for (const [width, height] of [[360, 800], [800, 360], [768, 1024], [1024, 768], [1440, 900]]) {
+    const ctx = await browser.newContext({ viewport: { width, height } }), p = await ctx.newPage(); p.on("dialog", d => d.accept()); p.on("pageerror", e => errors.push(e.message)); await p.goto(url); await welcome(p);
+    await code(p, 'name = input("이름: ")\nprint(f"안녕하세요, {name}")'); await save(p, "아주긴한글파일이름으로탭의말줄임과수정표시를확인합니다.py"); await code(p, 'name = input("이름: ")\nprint(f"안녕하세요, {name}")\n# 수정');
+    for (let n = 0; n < 6; n++) await newDoc(p);
+    const long = "아주긴한글파일이름으로탭의말줄임과수정표시를확인합니다.py"; await p.locator(".document-opened").click(); await p.locator(".opened-file-row button").filter({ hasText: new RegExp(`^${long}`) }).click(); assert.match(await run(p, ["민수"]), /안녕하세요, 민수/); await layout(p);
+    assert.ok(await p.locator(".document-tabs").evaluate(node => node.scrollWidth > node.clientWidth));
+    await p.locator(".document-add").scrollIntoViewIfNeeded(); await p.screenshot({ path: `${output}/responsive-${width}x${height}.png`, fullPage: true });
+    await tab(p, long).focus(); await p.keyboard.press("End"); assert.equal(await p.evaluate(() => document.activeElement.getAttribute("role")), "tab"); await p.keyboard.press("Enter"); assert.equal(await p.locator('.document-tabs [aria-selected="true"]').count(), 1); await p.keyboard.press("Home"); await p.keyboard.press("Enter"); assert.equal(await name(p), long);
+    await p.keyboard.press("Delete"); await dialogInside(p); await p.keyboard.press("Escape"); assert.equal(await tab(p, long).count(), 1);
+    if (width === 360 || width === 1024) { await p.locator(".files-toggle").click(); await p.locator(".files-toggle").click(); await p.locator(".save").click(); await p.waitForFunction(() => !document.querySelector(".modified").textContent.includes("*")); }
+    record(`viewport ${width}x${height}: render / long tabs / internal scroll / edit-run-input-output / ARIA keys / close dialog`); await ctx.close();
+  }
+  await page.setViewportSize({ width: 720, height: 900 }); await page.evaluate(() => { document.documentElement.style.zoom = "2"; }); await newDoc(page, 'print("200% 확대")'); assert.match(await run(page), /200% 확대/); await layout(page); await page.screenshot({ path: `${output}/zoom-200.png`, fullPage: true }); record("200% zoom actual editor and controls");
+  assert.deepEqual(errors, []); assert.deepEqual(badResponses, []); assert.deepEqual(requests, []); record("no JavaScript errors / missing assets / student-data network writes");
+} catch (error) {
+  results.push({ name: "failure", passed: false, error: String(error) }); await page.screenshot({ path: `${output}/failure.png`, fullPage: true }).catch(() => {}); throw error;
+} finally { await writeFile(`${output}/results.json`, JSON.stringify({ url, results, errors, requests, badResponses }, null, 2)); await browser.close(); }

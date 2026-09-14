@@ -55,3 +55,39 @@
 .diagnostics-status { min-height: 1.5em; color: #9fbee9; }
 .filename { min-width: 70px; }
 @media (max-width: 520px) { .restore-summary { grid-template-columns: 1fr; } }
+
+/* Document navigation is separate from page navigation and result tabs. */
+.app:not(.browsing-examples) { height: 100dvh; }
+.document-bar { display: flex; align-items: stretch; gap: 4px; min-width: 0; padding: 4px; border-bottom: 1px solid #40516d; background: #171f2e; }
+.document-tabs { display: flex; flex: 1 1 0; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.document-tab-wrap { flex: 0 0 auto; display: flex; align-items: stretch; max-width: 280px; border-bottom: 3px solid transparent; }
+.document-tab-wrap.active { background: #293b59; border-bottom-color: #86b9ff; }
+.document-tab-wrap button { display: flex; align-items: center; gap: 3px; min-width: 44px; min-height: 44px; padding: 0 10px; border-radius: 4px; background: transparent; color: #c6d4e9; }
+.document-tab-wrap.active button { color: #fff; }
+.document-tab-wrap [role="tab"] { min-width: 0; overflow: hidden; }
+.document-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.document-tab-name + span { flex-shrink: 0; white-space: nowrap; color: #ffda81; font-size: .78rem; }
+.document-add, .document-opened { flex: 0 0 auto; padding: 0 10px; min-width: 44px; min-height: 44px; background: #29364d; color: #eff5ff; font-size: .82rem; }
+.document-warning { padding: 10px; background: #453b25; overflow-wrap: anywhere; }
+.document-warning[hidden] { display: none; }
+.document-warning p { margin: 0 0 8px; }
+.document-warning button { margin: 3px; font-size: .8rem; }
+.document-dialog-detail { white-space: pre-line; overflow-wrap: anywhere; max-height: 35dvh; overflow: auto; }
+.document-dialog-layer input { width: 100%; min-width: 0; min-height: 44px; margin-bottom: 12px; background: #101827; color: #eff5ff; border: 1px solid #52647f; border-radius: 6px; padding: 8px; }
+.document-dialog-layer button, .opened-dialog-layer button { min-height: 44px; }
+.opened-dialog .opened-file-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin-bottom: 6px; }
+.opened-file-row button:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.execution-owner { margin: 0; padding: 6px 12px; color: #b9d7ff; font-size: .82rem; overflow-wrap: anywhere; }
+.execution-owner:empty { display: none; }
+.input-row { flex-wrap: wrap; }
+.input-owner { width: 100%; color: #9fbee9; font-size: .8rem; overflow-wrap: anywhere; }
+.filename { display: flex; min-width: 0; max-width: 180px; }
+.current-name { overflow: hidden; text-overflow: ellipsis; }
+.modified { flex-shrink: 0; }
+@media (max-width: 760px), (max-height: 600px) {
+  .workspace { grid-template-rows: minmax(max(380px, 52vh), 1fr) minmax(230px, auto); }
+  .document-tab-wrap:not(.active) .document-close { display: none; }
+  .document-tab-wrap { max-width: 200px; }
+  .workspace > .panel:not(.result-panel) { min-height: 380px; }
+  .tab-button, .input-submit, .file-item, .update, .install { min-height: 44px; }
+}

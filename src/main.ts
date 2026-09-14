@@ -5,6 +5,8 @@ import { CLASSROOM_EXAMPLES, exampleDocument, rememberWelcomeClosed, shouldShowW
 import { APP_VERSION } from "./app/version";
 import { executionErrorCategory, formatDiagnostics, type LastExecutionCategory } from "./app/diagnostics";
 import { LearningEditor } from "./editor/editor";
+import { DocumentTabs } from "./editor/document-tabs";
+import { isDirty } from "./editor/documents";
 import { BACKUP_FORMAT_VERSION, BackupValidationError, backupDownloadName, buildRestoreSet, createWorkspaceBackup, MAX_BACKUP_JSON_BYTES, parseWorkspaceBackup, restorePreview, serializeWorkspaceBackup, type ConflictPolicy, type WorkspaceBackup } from "./files/backup";
 import { decodeImportedBytes, FileDecodingError, type ImportEncodingChoice } from "./files/encoding";
 import { appFile, checkedPut, IndexedDbFileStore, normalizeName, validFileName, type AppFile } from "./files/storage";
@@ -57,36 +59,24 @@ const closeLayer = (layer: HTMLElement): void => {
 const host = app.querySelector<HTMLElement>(".editor-host")!, consoleEl = app.querySelector<HTMLElement>(".console")!, textView = app.querySelector<HTMLElement>(".text-view")!, graphicsView = app.querySelector<HTMLElement>(".graphics-view")!, graphicsTab = app.querySelector<HTMLButtonElement>(".graphics-tab")!, textTab = app.querySelector<HTMLButtonElement>('[data-result-tab="text"]')!, turtleRenderer = new TurtleCanvasRenderer(app.querySelector<HTMLCanvasElement>(".turtle-canvas")!);
 const runButton = app.querySelector<HTMLButtonElement>(".run")!, stopButton = app.querySelector<HTMLButtonElement>(".stop")!, modified = app.querySelector<HTMLElement>(".modified")!, nameEl = app.querySelector<HTMLElement>(".current-name")!, filePanel = app.querySelector<HTMLElement>(".file-panel")!, fileList = app.querySelector<HTMLElement>(".file-list")!, dialog = app.querySelector<HTMLElement>(".save-layer")!;
 const connectionEl = appStatus.querySelector<HTMLElement>(".connection-status")!, pwaMessage = appStatus.querySelector<HTMLElement>(".pwa-message")!, iosInstallHint = appStatus.querySelector<HTMLElement>(".ios-install-hint")!, updateNotice = appStatus.querySelector<HTMLElement>(".update-notice")!, updateButton = appStatus.querySelector<HTMLButtonElement>(".update")!, installButton = appStatus.querySelector<HTMLButtonElement>(".install")!;
-let dirty = false, restoring = false, worker: Worker | undefined, editor: LearningEditor, currentName = "main.py";
+let restoring = false, worker: Worker | undefined, editor: LearningEditor, tabs: DocumentTabs;
+let execution: { id: string; name: string } | undefined;
+const resultOwner = document.createElement("p"); resultOwner.className = "execution-owner"; resultOwner.setAttribute("role", "status"); app.querySelector(".result-panel .panel-heading")!.after(resultOwner);
 let lastExecution: LastExecutionCategory = "실행 전";
 let files = new Map<string, AppFile>();
 const append = (text: string, className = "console-line") => { const node = document.createElement("span"); node.className = className; node.textContent = text; if (className === "console-error") node.setAttribute("role", "alert"); consoleEl.append(node); consoleEl.scrollTop = consoleEl.scrollHeight; };
 const clearConsole = () => consoleEl.replaceChildren();
 const status = (text: string) => append(text, "console-status");
-const setRunning = (value: boolean) => { runButton.disabled = value; stopButton.disabled = !value; consoleEl.setAttribute("aria-busy", String(value)); };
-const setDirty = (value: boolean) => { dirty = value; modified.textContent = value ? " *" : ""; };
+const setRunning = (value: boolean) => { runButton.disabled = value && execution?.id === tabs?.active.id; stopButton.disabled = !value; consoleEl.setAttribute("aria-busy", String(value)); if (!value) consoleEl.querySelectorAll(".input-row").forEach(row => row.remove()); tabs?.render(); };
 const selectResult = (kind: "text" | "graphics") => { const graphics = kind === "graphics"; textView.hidden = graphics; graphicsView.hidden = !graphics; textTab.classList.toggle("selected", !graphics); graphicsTab.classList.toggle("selected", graphics); textTab.setAttribute("aria-selected", String(!graphics)); graphicsTab.setAttribute("aria-selected", String(graphics)); };
 const showGraphics = () => { graphicsTab.hidden = false; selectResult("graphics"); };
 const typeLabel = (name: string) => name.split(".").at(-1)?.toUpperCase() ?? "파일";
-const renderFiles = () => { fileList.replaceChildren(...[...files.values()].sort((a, b) => a.name.localeCompare(b.name, "ko")).map(file => { const button = document.createElement("button"); button.type = "button"; button.className = `file-item${file.name === currentName ? " selected" : ""}`; button.setAttribute("aria-current", String(file.name === currentName)); button.innerHTML = `<span></span><small>${typeLabel(file.name)}</small>`; button.querySelector("span")!.textContent = file.name; button.title = `가져오기 인코딩: ${file.encoding.toUpperCase()} · 원본 ${file.byteSize}바이트`; button.addEventListener("click", () => openFile(file.name)); return button; })); };
-const save = async (name = currentName, content = editor.value): Promise<boolean> => { try { const previous = files.get(name); const file = appFile(name, content, Date.now(), previous?.encoding ?? "utf-8", previous?.byteSize); await checkedPut(store, file); files.set(name, file); currentName = name; nameEl.textContent = name; setDirty(false); renderFiles(); return true; } catch { append("파일을 저장할 수 없습니다.", "console-error"); return false; } };
-const chooseUnsaved = (purpose: "replace" | "backup" = "replace"): Promise<"save" | "discard" | "cancel"> => new Promise(resolve => {
-  dialog.querySelector<HTMLElement>("#save-question")!.textContent = purpose === "backup" ? "현재 문서와 전체 백업" : "변경 사항 저장";
-  dialog.querySelector<HTMLElement>("#save-detail")!.textContent = purpose === "backup" ? "편집 중인 문서는 아직 저장되지 않았습니다. 어떻게 백업할까요?" : "현재 문서의 변경 사항을 저장하시겠습니까?";
-  dialog.querySelector<HTMLButtonElement>('[data-choice="save"]')!.textContent = purpose === "backup" ? "현재 문서 저장 후 백업" : "저장";
-  dialog.querySelector<HTMLButtonElement>('[data-choice="discard"]')!.textContent = purpose === "backup" ? "저장하지 않은 상태로 백업" : "저장하지 않음";
-  const buttons = dialog.querySelectorAll<HTMLButtonElement>("button");
-  const done = (choice: "save" | "discard" | "cancel") => { closeLayer(dialog); buttons.forEach(button => button.onclick = null); resolve(choice); };
-  buttons.forEach(button => button.onclick = () => done(button.dataset.choice as "save" | "discard" | "cancel"));
-  openLayer(dialog, dialog.querySelector<HTMLButtonElement>('[data-choice="save"]')!, () => done("cancel"));
-});
-const askName = (question: string, value: string): Promise<string | undefined> => new Promise(resolve => { const input = nameLayer.querySelector<HTMLInputElement>(".name-input")!; nameLayer.querySelector<HTMLElement>(".name-question")!.textContent = question; input.value = value; const done = (result?: string) => { closeLayer(nameLayer); resolve(result); }; nameLayer.querySelector<HTMLButtonElement>(".name-confirm")!.onclick = () => done(input.value); nameLayer.querySelector<HTMLButtonElement>(".name-cancel")!.onclick = () => done(); openLayer(nameLayer, input, () => done()); });
-const protect = async (next: () => void | Promise<void>): Promise<boolean> => { if (dirty) { const choice = await chooseUnsaved(); if (choice === "cancel") return false; if (choice === "save" && !await save()) return false; } await next(); return true; };
-const nextNewName = () => { let index = 1, name = "새 파일.py"; while (files.has(name)) name = `새 파일 ${++index}.py`; return name; };
-async function openFile(name: string): Promise<void> { const file = files.get(name); if (!file) return; await protect(() => { currentName = name; nameEl.textContent = name; editor.setValue(file.content); setDirty(false); renderFiles(); }); }
-const newFile = async () => protect(() => { currentName = nextNewName(); nameEl.textContent = currentName; editor.setValue(""); setDirty(false); renderFiles(); });
-const saveAs = async () => { const entered = await askName("새 파일 이름을 입력하세요.", currentName); if (entered === undefined) return; const name = normalizeName(entered); if (!validFileName(name)) { window.alert("파일 이름이 올바르지 않습니다."); return; } if (files.has(name) && !window.confirm(`'${name}' 파일을 덮어쓸까요?`)) return; await save(name); };
-const removeCurrent = async () => protect(async () => { if (!files.has(currentName) || !window.confirm(`'${currentName}' 파일을 삭제할까요?`)) return; try { await store.delete(currentName); files.delete(currentName); currentName = nextNewName(); nameEl.textContent = currentName; editor.setValue(""); setDirty(false); renderFiles(); } catch { append("파일을 삭제할 수 없습니다.", "console-error"); } });
+const renderFiles = () => { fileList.replaceChildren(...[...files.values()].sort((a, b) => a.name.localeCompare(b.name, "ko")).map(file => { const button = document.createElement("button"); button.type = "button"; button.className = `file-item${file.name === tabs?.active.savedFileName ? " selected" : ""}`; button.setAttribute("aria-current", String(file.name === tabs?.active.savedFileName)); button.innerHTML = `<span></span><small>${typeLabel(file.name)}</small>`; button.querySelector("span")!.textContent = file.name; button.title = `가져오기 인코딩: ${file.encoding.toUpperCase()} · 원본 ${file.byteSize}바이트`; button.addEventListener("click", () => openFile(file.name)); return button; })); };
+const save = () => tabs.save();
+function openFile(name: string): void { const file = files.get(name); if (file) { tabs.open(file); filePanel.classList.remove("show"); app.querySelector(".files-toggle")!.setAttribute("aria-expanded", "false"); } }
+const newFile = () => tabs.newDocument();
+const saveAs = () => tabs.save(true);
+const removeCurrent = () => tabs.deleteActive();
 const importFile = () => {
   const input = importLayer.querySelector<HTMLInputElement>(".import-file")!, select = importLayer.querySelector<HTMLSelectElement>(".encoding-select")!, error = importLayer.querySelector<HTMLElement>(".import-error")!;
   select.value = "auto"; error.hidden = true; error.textContent = ""; input.value = "";
@@ -104,9 +94,9 @@ const importFile = () => {
         if (choice === "다른 이름") { const alternative = window.prompt("새 파일 이름", name); if (alternative === null) return; name = normalizeName(alternative); }
       }
       const file = appFile(name, decoded.content, picked.lastModified || Date.now(), decoded.encoding, decoded.byteSize);
-      await checkedPut(store, file); files.set(name, file); renderFiles(); close();
+      await checkedPut(store, file); files.set(name, file); tabs.external(file); renderFiles(); close();
       append(`${name} 파일을 ${decoded.encoding === "euc-kr" ? "EUC-KR" : "UTF-8"}로 가져왔습니다.\n`, "console-status");
-      if (name.endsWith(".py")) await openFile(name);
+      openFile(name);
     } catch (reason) {
       error.textContent = reason instanceof FileDecodingError ? reason.message : "파일을 가져올 수 없습니다.";
       error.hidden = false; select.focus(); input.value = "";
@@ -114,14 +104,10 @@ const importFile = () => {
   };
   openLayer(importLayer, select, close);
 };
-const exportFile = () => { const blob = new Blob([editor.value], { type: "text/plain;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = currentName; link.click(); URL.revokeObjectURL(link.href); };
+const exportFile = () => { const blob = new Blob([editor.value], { type: "text/plain;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = tabs.active.fileName; link.click(); URL.revokeObjectURL(link.href); };
 const downloadText = (text: string, name: string, type: string): void => { const blob = new Blob([text], { type }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); };
 const backupAll = async (): Promise<void> => {
-  if (dirty) {
-    const choice = await chooseUnsaved("backup");
-    if (choice === "cancel") return;
-    if (choice === "save" && !await save()) return;
-  }
+  if (!await tabs.protect("저장된 파일 전체 백업")) return;
   try {
     const saved = await store.list();
     const backup = createWorkspaceBackup(saved, APP_VERSION);
@@ -153,28 +139,26 @@ const setRestoreSummary = (backup: WorkspaceBackup, existing: readonly AppFile[]
 const applyRestore = async (): Promise<void> => {
   const backup = pendingBackup; if (!backup || restoring) return;
   closeLayer(restoreLayer);
-  if (dirty) {
-    const choice = await chooseUnsaved();
-    if (choice === "cancel") return;
-    if (choice === "save" && !await save()) return;
-  }
+  if (!await tabs.protect("전체 복원 전 변경 사항 저장")) return;
+  worker?.terminate(); worker = undefined; setRunning(false);
   restoring = true;
+  app.querySelector<HTMLElement>(".workspace")!.inert = true;
+  (topbar as HTMLElement).inert = true;
   const restoreButton = app.querySelector<HTMLButtonElement>(".restore-all")!;
   restoreButton.disabled = true; updateButton.disabled = true;
   try {
+    await fileWrites;
     const existing = await store.list();
     const restored = buildRestoreSet(existing, backup, selectedRestorePolicy());
     await store.replaceAll(restored);
     files = new Map(restored.map(file => [file.name, file]));
-    let opened = files.get(currentName);
-    if (!opened) { opened = restored.find(file => file.name.endsWith(".py")); currentName = opened?.name ?? nextNewName(); }
-    nameEl.textContent = currentName;
-    editor.setValue(opened?.content ?? ""); setDirty(false); renderFiles();
+    tabs.replaceSaved(files); renderFiles();
     status(`전체 복원이 완료되었습니다. 저장 파일 ${restored.length}개\n`);
   } catch (reason) {
     append(reason instanceof BackupValidationError ? reason.message : "전체 복원에 실패했습니다. 기존 파일은 변경되지 않았습니다.", "console-error");
   } finally {
     pendingBackup = undefined; restoring = false; restoreButton.disabled = false; updateButton.disabled = false; restoreInput.value = "";
+    app.querySelector<HTMLElement>(".workspace")!.inert = false; (topbar as HTMLElement).inert = false;
   }
 };
 
@@ -260,14 +244,8 @@ const showHelpDialog = (): void => {
 };
 const loadExample = async (example: ClassroomExample): Promise<void> => {
   closeLayer(examplesLayer);
-  await protect(() => {
-    const document = exampleDocument(example);
-    currentName = document.name;
-    nameEl.textContent = currentName;
-    editor.setValue(document.content);
-    setDirty(document.dirty);
-    renderFiles();
-  });
+  const document = exampleDocument(example);
+  tabs.example(document.name, document.content);
 };
 const exampleList = examplesLayer.querySelector<HTMLElement>(".example-list")!;
 exampleList.replaceChildren(...CLASSROOM_EXAMPLES.map((example, index) => {
@@ -285,15 +263,42 @@ const showExamplesDialog = (): void => {
   examplesLayer.querySelector<HTMLButtonElement>(".examples-close")!.onclick = close;
   openLayer(examplesLayer, examplesLayer.querySelector<HTMLButtonElement>(".example-item")!, close);
 };
-editor = new LearningEditor(host, initialCode, () => { if (!dirty) setDirty(true); editor.setError(null); });
+editor = new LearningEditor(host, initialCode, () => { tabs?.edited(); });
+nameLayer.remove(); dialog.remove();
+tabs = new DocumentTabs({ editor, host, store, files: () => files, changed: () => {
+  if (!tabs) return;
+  nameEl.textContent = tabs.active.fileName; modified.textContent = isDirty(tabs.active) ? " *" : "";
+  runButton.disabled = restoring || Boolean(worker && execution?.id === tabs.active.id);
+  renderFiles();
+}, message: (text, error) => append(text, error ? "console-error" : "console-status"), running: () => worker ? execution?.id : undefined }, initialCode);
+tabs.render();
 app.querySelector<HTMLButtonElement>(".tab-button")!.addEventListener("click", () => editor.insertTab()); app.querySelector<HTMLButtonElement>(".clear")!.addEventListener("click", clearConsole); app.querySelector<HTMLButtonElement>(".new-file")!.addEventListener("click", newFile); app.querySelector<HTMLButtonElement>(".save")!.addEventListener("click", () => save()); app.querySelector<HTMLButtonElement>(".save-as")!.addEventListener("click", saveAs); app.querySelector<HTMLButtonElement>(".import")!.addEventListener("click", importFile); app.querySelector<HTMLButtonElement>(".export")!.addEventListener("click", exportFile); app.querySelector<HTMLButtonElement>(".backup-all")!.addEventListener("click", () => { void backupAll(); }); app.querySelector<HTMLButtonElement>(".restore-all")!.addEventListener("click", restoreAll); app.querySelector<HTMLButtonElement>(".delete-file")!.addEventListener("click", removeCurrent); app.querySelector<HTMLButtonElement>(".examples-toggle")!.addEventListener("click", showExamplesDialog); app.querySelector<HTMLButtonElement>(".help-toggle")!.addEventListener("click", showHelpDialog); app.querySelector<HTMLButtonElement>(".files-toggle")!.addEventListener("click", event => { const button = event.currentTarget as HTMLButtonElement; const shown = filePanel.classList.toggle("show"); button.setAttribute("aria-expanded", String(shown)); }); textTab.addEventListener("click", () => selectResult("text")); graphicsTab.addEventListener("click", () => selectResult("graphics"));
-window.addEventListener("beforeunload", event => { if (dirty || restoring) event.preventDefault(); });
-function showInput(prompt: string): void { const row = document.createElement("form"); row.className = "input-row"; row.innerHTML = `<span class="sr-only" role="status">프로그램이 입력을 기다리고 있습니다.</span><span class="input-prompt"></span><input class="console-input" aria-label="프로그램 입력" autocomplete="off" /><button class="input-submit" type="submit">입력</button>`; row.querySelector<HTMLElement>(".input-prompt")!.textContent = prompt; const input = row.querySelector<HTMLInputElement>("input")!; row.addEventListener("submit", event => { event.preventDefault(); const value = input.value; const answer = document.createElement("span"); answer.className = "console-line"; answer.textContent = `${prompt}${value}\n`; row.replaceWith(answer); worker?.postMessage({ type: "input", value } satisfies ToWorker); }); consoleEl.append(row); input.focus({ preventScroll: false }); row.scrollIntoView({ block: "nearest" }); }
-function finish(kind: "complete" | "stopped"): void { lastExecution = kind === "complete" ? "성공" : "사용자 중지"; status(kind === "complete" ? "실행이 완료되었습니다." : "실행이 중지되었습니다."); setRunning(false); worker?.terminate(); worker = undefined; }
-function receive(message: FromWorker): void { switch (message.type) { case "output": append(message.text); break; case "graphics": showGraphics(); turtleRenderer.apply(message.commands); break; case "input-request": showInput(message.prompt); break; case "file-change": { const file = appFile(message.name, message.content); files.set(file.name, file); renderFiles(); checkedPut(store, file).catch(() => append("파일 변경을 저장할 수 없습니다.", "console-error")); break; } case "error": lastExecution = executionErrorCategory(message.error.message); editor.setError(message.error.line); append(`${message.error.line}번째 줄: ${message.error.message}`, "console-error"); setRunning(false); worker?.terminate(); worker = undefined; break; case "complete": finish("complete"); break; case "stopped": finish("stopped"); break; } }
-runButton.addEventListener("click", () => { if (restoring) return; worker?.terminate(); clearConsole(); turtleRenderer.reset(); graphicsTab.hidden = true; selectResult("text"); editor.setError(null); setRunning(true); status("실행 중..."); worker = new Worker(new URL("./runtime/worker.ts", import.meta.url), { type: "module" }); worker.onmessage = ({ data }: MessageEvent<FromWorker>) => receive(data); worker.onerror = () => { lastExecution = "시스템 오류"; append("실행 중 오류가 발생했습니다.", "console-error"); setRunning(false); worker?.terminate(); worker = undefined; }; worker.postMessage({ type: "run", code: editor.value, files: [...files.values()].map(file => ({ name: file.name, content: file.content, encoding: file.encoding })) } satisfies ToWorker); });
+window.addEventListener("beforeunload", event => { if (restoring) event.preventDefault(); });
+window.addEventListener("keydown", event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (!restoring) void tabs.save(event.shiftKey); } });
+function showInput(prompt: string): void { const source = worker; const row = document.createElement("form"); row.className = "input-row"; row.innerHTML = `<span class="input-owner"></span><span class="input-prompt"></span><input class="console-input" aria-label="프로그램 입력" autocomplete="off" /><button class="input-submit" type="submit">입력</button>`; row.querySelector<HTMLElement>(".input-owner")!.textContent = `입력 대기: ${execution?.name ?? ""}`; row.querySelector<HTMLElement>(".input-prompt")!.textContent = prompt; const input = row.querySelector<HTMLInputElement>("input")!; input.setAttribute("aria-label", `${execution?.name} 프로그램 입력`); row.addEventListener("submit", event => { event.preventDefault(); if (source !== worker) return; const value = input.value; const answer = document.createElement("span"); answer.className = "console-line"; answer.textContent = `${prompt}${value}\n`; row.replaceWith(answer); source?.postMessage({ type: "input", value } satisfies ToWorker); }); consoleEl.append(row); input.focus({ preventScroll: false }); row.scrollIntoView({ block: "nearest" }); }
+function finish(kind: "complete" | "stopped"): void { lastExecution = kind === "complete" ? "성공" : "사용자 중지"; status(kind === "complete" ? "실행이 완료되었습니다." : "실행이 중지되었습니다."); worker?.terminate(); worker = undefined; setRunning(false); }
+let fileWrites: Promise<void> = Promise.resolve();
+function receive(message: FromWorker): void { switch (message.type) { case "output": append(message.text); break; case "graphics": showGraphics(); turtleRenderer.apply(message.commands); break; case "input-request": showInput(message.prompt); break; case "file-change": { const file = appFile(message.name, message.content); fileWrites = fileWrites.then(async () => { await checkedPut(store, file); files.set(file.name, file); tabs.external(file); }).catch(() => append("파일 변경을 저장할 수 없습니다. 편집 내용은 유지됩니다.", "console-error")); break; } case "error": lastExecution = executionErrorCategory(message.error.message); if (execution) tabs.setError(execution.id, message.error.line); append(`${message.error.line}번째 줄: ${message.error.message}`, "console-error"); worker?.terminate(); worker = undefined; setRunning(false); break; case "complete": finish("complete"); break; case "stopped": finish("stopped"); break; } }
+let runGeneration = 0;
+runButton.addEventListener("click", async () => {
+  if (restoring) return;
+  const generation = ++runGeneration;
+  const id = tabs.active.id, name = tabs.active.fileName, code = editor.value;
+  worker?.terminate(); worker = undefined;
+  await fileWrites;
+  if (restoring || generation !== runGeneration) return;
+  clearConsole(); turtleRenderer.reset(); graphicsTab.hidden = true; selectResult("text");
+  execution = { id, name }; resultOwner.textContent = `실행: ${name}`; tabs.setError(id, null); status("실행 중...");
+  const source = new Worker(new URL("./runtime/worker.ts", import.meta.url), { type: "module" }); worker = source; setRunning(true);
+  source.onmessage = ({ data }: MessageEvent<FromWorker>) => { if (worker === source) receive(data); };
+  source.onerror = () => {
+    if (worker !== source) return;
+    lastExecution = "시스템 오류"; append("실행 중 오류가 발생했습니다.", "console-error"); source.terminate(); worker = undefined; setRunning(false);
+  };
+  source.postMessage({ type: "run", code, files: [...files.values()].map(file => ({ name: file.name, content: file.content, encoding: file.encoding })) } satisfies ToWorker);
+});
 stopButton.addEventListener("click", () => worker?.postMessage({ type: "stop" } satisfies ToWorker));
-store.list().then(saved => { files = new Map(saved.map(file => [file.name, file])); renderFiles(); }).catch(() => append("저장소를 열 수 없습니다.", "console-error"));
+store.list().then(saved => { files = new Map(saved.map(file => [file.name, file])); tabs.initialize(files); renderFiles(); }).catch(() => append("저장소를 열 수 없습니다.", "console-error"));
 setupPwa({
   onConnection: text => { connectionEl.textContent = text; },
   onMessage: text => { pwaMessage.textContent = text; pwaMessage.hidden = false; },
@@ -303,8 +308,8 @@ setupPwa({
     updateNotice.hidden = false; updateButton.hidden = false;
     updateButton.onclick = async () => {
       if (restoring) { pwaMessage.textContent = "전체 복원이 끝난 뒤 업데이트해 주세요."; pwaMessage.hidden = false; return; }
-      if (dirty) { const choice = await chooseUnsaved(); if (choice === "cancel") return; if (choice === "save" && !await save()) return; }
-      updateButton.disabled = true; activate();
+      if (!await tabs.protect("앱 업데이트 전 변경 사항 저장")) return;
+      tabs.allowNavigation(); updateButton.disabled = true; activate();
     };
   },
 });
@@ -327,27 +332,29 @@ async function editTextbookExample(example: LearningExample): Promise<boolean> {
     if (choice === "cancel" || location.hash !== sourceHash) return false;
     includeData = choice === "data";
   }
-  return protect(async () => {
-    if (location.hash !== sourceHash) return;
+    if (location.hash !== sourceHash) return false;
     if (includeData) {
       const samples = example.dataFiles!.map(file => appFile(file.name, file.content));
       const merged = buildRestoreSet(await store.list(), createWorkspaceBackup(samples, APP_VERSION), policy);
       await store.replaceAll(merged);
       files = new Map(merged.map(file => [file.name, file]));
+      merged.forEach(file => tabs.external(file));
     }
-    currentName = example.suggestedFileName; nameEl.textContent = currentName;
-    editor.setValue(example.code); setDirty(true); renderFiles(); location.hash = "#/editor";
-  });
+    location.hash = "#/editor"; tabs.example(example.suggestedFileName, example.code); return true;
 }
 const textbookNavigation = document.createElement("nav"); textbookNavigation.className = "textbook-nav"; textbookNavigation.setAttribute("aria-label", "학습실 페이지");
-const editorLink = document.createElement("a"); editorLink.href = "#/editor"; editorLink.textContent = "편집기";
+const editorLink = document.createElement("a"); editorLink.href = "#/editor"; editorLink.textContent = "코드 편집";
 const textbookLink = document.createElement("a"); textbookLink.href = "#/examples"; textbookLink.textContent = "교과서 예제";
 textbookNavigation.append(editorLink, textbookLink); topbar.prepend(textbookNavigation);
 app.querySelector<HTMLButtonElement>(".files-toggle")!.addEventListener("click", () => { if (location.hash.startsWith("#/examples")) location.hash = "#/editor"; });
 const textbookHelp = document.createElement("section"); const textbookHelpTitle = document.createElement("h3"); textbookHelpTitle.textContent = "교과서 예제";
 const textbookHelpText = document.createElement("p"); textbookHelpText.textContent = "교과서 예제에서 쪽 번호·제목·문법으로 검색하고 주제로 좁힐 수 있습니다. 예제 실행은 현재 문서와 저장 파일을 건드리지 않는 임시 공간을 사용합니다. 데이터 파일도 임시로만 제공됩니다. 편집기에서 수정하기로 가져온 코드는 자동 저장되지 않습니다. 예제 링크 복사로 학생에게 직접 주소를 전달하세요. 교과서 원문이 아니라 같은 개념을 보여주는 자체 제작 코드입니다. 최초 온라인 접속 후 오프라인에서도 사용할 수 있습니다.";
 textbookHelp.append(textbookHelpTitle, textbookHelpText); helpLayer.querySelector(".dialog-scroll")!.append(textbookHelp);
+const tabsHelp = document.createElement("section");
+tabsHelp.innerHTML = `<h3>여러 문서 탭</h3><ul><li><strong>+ / 새 파일</strong>과 파일 목록으로 현재 탭 오른쪽에 문서를 엽니다. 같은 저장 파일은 기존 탭으로 이동합니다.</li><li>탭 전환은 저장이 아닙니다. 내용·커서·선택·스크롤·실행 취소 기록을 탭별로 유지합니다. <strong>*</strong>는 저장된 내용과 다르다는 뜻입니다.</li><li><strong>저장 / Ctrl·Cmd+S</strong>는 현재 탭만 저장합니다. 새 문서는 이름을 확인합니다. <strong>다른 이름으로 / Ctrl·Cmd+Shift+S</strong>는 원래 저장 파일을 남깁니다.</li><li>닫기 × 또는 Delete는 수정 내용의 저장·버리기·취소를 확인합니다. <strong>열린 파일</strong> 목록에서도 탭 선택과 닫기를 할 수 있습니다.</li><li>탭에서 화살표·Home·End로 포커스를 옮기고 Enter·Space로 전환합니다.</li><li>새로고침 경고를 무시하면 미저장 코드와 새 문서·undo 기록은 복원되지 않습니다. 저장된 탭의 이름·순서만 기억하며 코드는 IndexedDB에서 다시 읽습니다. 자동 저장하지 않습니다.</li><li>업데이트·전체 복원은 모든 수정 탭의 이름과 수를 표시합니다. 모두 저장 중 하나라도 실패하거나 이름 입력을 취소하면 작업을 중단합니다.</li><li>교과서·기초 예제를 가져오면 기존 문서를 덮어쓰지 않고 새 수정 탭을 만듭니다.</li><li>편집기는 한 번에 하나의 Python 프로그램을 실행합니다. 결과의 ‘실행: 파일명’과 입력창의 파일명을 확인하세요. 다른 탭에서 실행하면 이전 실행을 종료합니다.</li><li>Python이 열린 파일을 바꾸면 수정 탭은 유지하고 충돌을 알립니다. 편집 내용 유지·저장된 내용 다시 불러오기·다른 이름으로 저장 중 선택합니다.</li></ul>`;
+helpLayer.querySelector(".dialog-scroll")!.prepend(tabsHelp);
 mountExampleBrowser(app.querySelector<HTMLElement>(".app")!, active => {
+  if (active) { ++runGeneration; if (worker) finish("stopped"); }
   app.querySelector<HTMLElement>(".workspace")!.hidden = active;
   app.querySelector<HTMLElement>(".app")!.classList.toggle("browsing-examples", active);
   if (active) { textbookLink.setAttribute("aria-current", "page"); editorLink.removeAttribute("aria-current"); }

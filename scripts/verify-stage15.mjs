@@ -30,7 +30,7 @@ async function replaceCode(page, code) {
   assert.equal(await editorText(page), normalize(code));
 }
 async function dismissWelcome(page) { if (await page.locator(".welcome-dialog").isVisible()) await page.locator(".welcome-close").click(); }
-async function saveCurrent(page) { await page.locator(".save").click(); await page.waitForFunction(() => !document.querySelector(".modified")?.textContent?.includes("*")); }
+async function saveCurrent(page) { await page.locator(".save").click(); if (await page.locator(".document-dialog-layer .name-input").isVisible()) await page.locator(".name-confirm").click(); await page.waitForFunction(() => !document.querySelector(".modified")?.textContent?.includes("*")); }
 async function saveAs(page, name) {
   await page.locator(".save-as").click(); await page.locator(".name-input").fill(name); await page.locator(".name-confirm").click();
   await page.waitForFunction(expected => document.querySelector(".current-name")?.textContent === expected && !document.querySelector(".modified")?.textContent?.includes("*"), name);
@@ -54,10 +54,10 @@ async function chooseBackup(page, path) {
 }
 async function restoreBackup(page, path, policy = "keep") {
   const previous = await page.locator(".console").innerText(); await chooseBackup(page, path); await page.locator(`input[name="restore-policy"][value="${policy}"]`).check(); await page.locator(".restore-confirm").click();
-  if (await page.locator(".save-layer .save-dialog").isVisible()) await page.locator('.save-layer [data-choice="discard"]').click();
+  if (await page.locator(".document-dialog-layer .save-dialog").isVisible()) await page.locator('.document-dialog-layer [data-choice="discard"]').click();
   await page.waitForFunction(before => { const text = document.querySelector(".console")?.textContent ?? ""; return text !== before && text.includes("전체 복원이 완료되었습니다"); }, previous);
 }
-async function openFile(page, name) { await page.locator(".file-item > span", { hasText: name, exact: true }).click(); if (await page.locator(".save-layer .save-dialog").isVisible()) await page.locator('.save-layer [data-choice="discard"]').click(); await page.waitForFunction(expected => document.querySelector(".current-name")?.textContent === expected, name); }
+async function openFile(page, name) { await page.locator(".file-item > span", { hasText: name, exact: true }).click(); await page.waitForFunction(expected => document.querySelector(".current-name")?.textContent === expected, name); }
 async function run(page, answers = []) {
   await page.locator(".run").click();
   for (const answer of answers) { await page.locator(".console-input").waitFor(); await page.locator(".console-input").fill(answer); await page.locator(".input-submit").click(); }
@@ -78,10 +78,10 @@ try {
 
   await openFile(source, "main.py"); await replaceCode(source, 'print("백업에 들어가면 안 되는 미저장 코드")');
   const dirtyDownload = source.waitForEvent("download"); await source.locator(".backup-all").click();
-  const labels = await source.locator(".save-layer button").allTextContents(); assert.deepEqual(labels, ["현재 문서 저장 후 백업", "저장하지 않은 상태로 백업", "취소"]);
-  await source.locator('.save-layer [data-choice="discard"]').click(); const dirtyBackup = await dirtyDownload; const dirtyPath = join(outputDirectory, "dirty-excluded.pylab-backup.json"); await dirtyBackup.saveAs(dirtyPath);
+  const labels = await source.locator(".document-dialog-layer button").allTextContents(); assert.deepEqual(labels, ["모두 저장", "저장하지 않음", "취소"]);
+  await source.locator('.document-dialog-layer [data-choice="discard"]').click(); const dirtyBackup = await dirtyDownload; const dirtyPath = join(outputDirectory, "dirty-excluded.pylab-backup.json"); await dirtyBackup.saveAs(dirtyPath);
   assert.ok(!readFileSync(dirtyPath, "utf8").includes("미저장 코드"), "미저장 편집 내용이 백업에 포함됐습니다.");
-  await source.locator(".file-item > span", { hasText: "main.py", exact: true }).click(); await source.locator('.save-layer [data-choice="discard"]').click();
+  await source.locator('.document-tabs [role="tab"]').filter({ hasText: "main.py" }).locator("..").locator(".document-close").click(); await source.locator('.document-dialog-layer [data-choice="discard"]').click(); await openFile(source, "main.py");
   const backupJson = await downloadBackup(source, backupPath);
   assert.equal(backupJson.format, "python-learning-lab-backup"); assert.equal(backupJson.formatVersion, 1); assert.equal(backupJson.appVersion, packageVersion); assert.equal(backupJson.files.length, 5);
   assert.deepEqual(Object.keys(backupJson).sort(), ["appVersion", "createdAt", "files", "format", "formatVersion"]);
@@ -90,7 +90,7 @@ try {
   await sourceContext.close();
 
   const cleanContext = await browser.newContext({ viewport: { width: 1024, height: 768 }, acceptDownloads: true, serviceWorkers: "allow" });
-  const page = await cleanContext.newPage(); const pageErrors = []; page.on("pageerror", error => pageErrors.push(error.message));
+  const page = await cleanContext.newPage(); page.on("dialog", dialog => dialog.accept()); const pageErrors = []; page.on("pageerror", error => pageErrors.push(error.message));
   await page.goto(url, { waitUntil: "networkidle" }); await dismissWelcome(page); assert.equal((await storedFiles(page)).length, 0);
   await chooseBackup(page, backupPath);
   const summary = await page.locator(".restore-dialog").innerText(); assert.match(summary, /백업 파일\s*5개/); assert.match(summary, /새 파일\s*5개/); assert.match(summary, /이름 충돌\s*0개/);
