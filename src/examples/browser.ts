@@ -2,6 +2,8 @@ import "./examples.css";
 import { LearningEditor } from "../editor/editor";
 import { TurtleCanvasRenderer } from "../graphics/turtle-canvas";
 import { TEXTBOOK_EXAMPLES } from "./catalog";
+import { CORE_EXAMPLES } from "./core-v2";
+const ALL_EXAMPLES = [...TEXTBOOK_EXAMPLES, ...CORE_EXAMPLES];
 import { emptyFilters, exampleHash, exampleRoute, filterExamples, STATUS, TOPICS, type LearningExample } from "./model";
 import { ExampleRunner, type ExampleWorker } from "./runner";
 
@@ -33,13 +35,13 @@ export function mountExampleBrowser(parent: HTMLElement, onVisibility: (active: 
   let lastId: string | undefined;
   function cleanup() { runner?.dispose(); viewer?.destroy(); graphics?.destroy(); runner = undefined; viewer = undefined; graphics = undefined; }
   function renderCards() {
-    const results = filterExamples(TEXTBOOK_EXAMPLES, filters); count.textContent = `${results.length}개 예제`;
+    const results = filterExamples(ALL_EXAMPLES, filters); count.textContent = `${results.length}개 예제`;
     cards.replaceChildren();
     if (!results.length) cards.append(element("p", "검색 결과가 없습니다. 필터를 초기화해 주세요."));
     for (const example of results) {
       const card = element("a", "", "textbook-card"); card.href = exampleHash(example.id); card.dataset.exampleId = example.id;
       if (current?.id === example.id) card.setAttribute("aria-current", "page");
-      card.append(element("small", `${example.page}쪽 · ${STATUS[example.status]}`), element("strong", example.title), element("span", example.topics.join(" · ")), element("span", example.summary));
+      card.append(element("small", `${example.page ? `${example.page}쪽` : "Core v2"} · ${STATUS[example.status]}`), element("strong", example.title), element("span", example.topics.join(" · ")), element("span", example.summary));
       cards.append(card);
     }
   }
@@ -47,7 +49,7 @@ export function mountExampleBrowser(parent: HTMLElement, onVisibility: (active: 
   topic.onchange = () => { filters.topic = topic.value; renderCards(); };
   status.onchange = () => { filters.status = status.value; renderCards(); };
   function renderDetail(example: LearningExample) {
-    const title = element("h2", `${example.page}쪽 · ${example.title}`); title.tabIndex = -1;
+    const title = element("h2", `${example.page ? `${example.page}쪽` : "Core v2"} · ${example.title}`); title.tabIndex = -1;
     const back = button("목록으로", () => { location.hash = "#/examples"; });
     const summary = element("p", example.summary);
     const tags = element("p", `${STATUS[example.status]} · ${example.topics.join(" · ")}`);
@@ -90,7 +92,7 @@ export function mountExampleBrowser(parent: HTMLElement, onVisibility: (active: 
       if (event.type === "output") output.textContent += event.text;
       else if (event.type === "graphics") { canvas.hidden = false; graphics?.apply(event.commands); }
       else if (event.type === "input-request") { inputLabel.textContent = event.prompt || "입력값"; input.value = ""; inputForm.hidden = false; announceExecution(live, "입력을 기다리고 있습니다."); input.focus(); }
-      else if (event.type === "error") { viewer?.setError(event.error.line); announceExecution(live, `${event.error.line}번째 줄: ${event.error.message}`, true); setRunning(false); }
+      else if (event.type === "error") { const moduleError = event.error.fileName && event.error.fileName !== "main.py"; if (!moduleError) viewer?.setError(event.error.line); announceExecution(live, `${moduleError ? `${event.error.fileName}: ` : ""}${event.error.line}번째 줄: ${event.error.message}`, true); setRunning(false); }
       else if (event.type === "complete" || event.type === "stopped") { announceExecution(live, event.type === "complete" ? "실행 완료" : "실행 중지"); setRunning(false); }
     });
     inputForm.onsubmit = event => { event.preventDefault(); const value = input.value; inputForm.hidden = true; announceExecution(live, "실행 중"); runner?.input(value); };
@@ -102,7 +104,7 @@ export function mountExampleBrowser(parent: HTMLElement, onVisibility: (active: 
   }
   function route() {
     const route = exampleRoute(location.hash); cleanup(); if (current) lastId = current.id;
-    current = route.id ? TEXTBOOK_EXAMPLES.find(example => example.id === route.id) : undefined;
+    current = route.id ? ALL_EXAMPLES.find(example => example.id === route.id) : undefined;
     page.hidden = !route.active; onVisibility(route.active); detail.replaceChildren();
     page.classList.toggle("has-detail", !!route.id); renderCards();
     if (!route.active) return;

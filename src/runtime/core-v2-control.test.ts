@@ -1,0 +1,26 @@
+import { describe, expect, it } from "vitest";
+import { compile } from "../compiler/compiler";
+import { VM, type VMEvent } from "./vm";
+const execute = (source: string) => { const events: VMEvent[] = []; new VM(compile(source), event => events.push(event)).execute(); return events; };
+const output = (source: string) => { const events = execute(source); expect(events.at(-1)).toEqual({ type: "complete" }); return events.filter(e => e.type === "output").map(e => e.text).join(""); };
+describe("Core v2 제어문 및 복합 대입", () => {
+  it("for 정상 종료와 빈 반복 대상은 else 실행", () => expect(output('for x in [1, 2]:\n    print(x)\nelse:\n    print("끝")\nfor x in []:\n    pass\nelse:\n    print("비었음")')).toBe("1\n2\n끝\n비었음\n"));
+  it("for break는 else를 건너뛴다", () => expect(output('for x in range(2):\n    break\nelse:\n    print("실패")\nprint("끝")')).toBe("끝\n"));
+  it("continue는 정상 종료 else를 방해하지 않는다", () => expect(output('for x in range(2):\n    continue\nelse:\n    print("끝")')).toBe("끝\n"));
+  it("while 정상 종료와 최초 거짓 조건", () => expect(output('n = 2\nwhile n:\n    n -= 1\nelse:\n    print(n)\nwhile False:\n    pass\nelse:\n    print("끝")')).toBe("0\n끝\n"));
+  it("while break는 else를 건너뛴다", () => expect(output('while True:\n    break\nelse:\n    print("실패")\nprint("끝")')).toBe("끝\n"));
+  it("중첩 반복문에서 가장 가까운 else만 제어", () => expect(output('for n in range(2, 10):\n    for d in range(2, n):\n        if n % d == 0:\n            break\n    else:\n        print(n)')).toBe("2\n3\n5\n7\n"));
+  it("내부 else에서 break는 바깥 반복문을 종료", () => expect(output('for n in range(3):\n    for d in []:\n        pass\n    else:\n        break\nelse:\n    print("실패")\nprint("끝")')).toBe("끝\n"));
+  it("조건 표현식은 선택한 피연산자만 평가", () => expect(output('print("성인" if 20 >= 19 else missing)\nprint(missing if False else "청소년")')).toBe("성인\n청소년\n"));
+  it("조건 표현식은 우측 결합이고 or보다 낮은 우선순위", () => expect(output('print(1 if False else 2 if False else 3)\nprint(False or 4 if True else 5)')).toBe("3\n4\n"));
+  it("내포의 필터와 조건 표현식 구분", () => expect(output('print([x if x else 9 for x in range(4) if x < 3 if x != 1])')).toBe("[9, 2]\n"));
+  it("동일성과 동등성은 컬렉션에서 구분", () => expect(output('a = [1]\nb = a\nc = [1]\nprint(a is b, a is c, a == c, a is not c)\nprint(None is None, True is not False, 1 is not True)')).toBe("True False True True\nTrue True True\n"));
+  it("is와 다른 비교는 연속 비교 가능", () => expect(output('a = []\nb = a\nprint(a is b == [])\nprint(a is not b is not None)')).toBe("True\nFalse\n"));
+  it("중첩 첨자 복합 대입", () => expect(output('maps = [[0, 0], [0, 0]]\nmaps[1][0] += 5\nprint(maps)')).toBe("[[0, 0], [5, 0]]\n"));
+  it("딕셔너리와 객체 속성이 섞인 복합 대입", () => expect(output('data = {"scores": [1]}\ndata["scores"][0] += 1\nclass Box:\n    pass\nobj = Box()\nobj.items = [1, 3]\nobj.items[1] *= 2\nprint(data, obj.items)')).toBe("{'scores': [2]} [1, 6]\n"));
+  it("중간 객체 및 첨자 함수는 한 번씩 왼쪽부터 평가", () => expect(output('events = []\nvalues = [[10]]\ndef idx(n):\n    events.append(n)\n    return 0\nvalues[idx("중간")][idx("마지막")] += 5\nprint(events, values)')).toBe("['중간', '마지막'] [[15]]\n"));
+  it("첨자 복합 대입은 RHS 호출 전 기존 값을 읽는다", () => expect(output('values = [10]\ndef rhs():\n    values[0] = 100\n    return 2\nvalues[0] += rhs()\nprint(values)')).toBe("[12]\n"));
+  it("잘못된 첨자 오류 줄 번호", () => expect(execute('values = [[1]]\nvalues[0][2] += 1').at(-1)).toMatchObject({ type: "error", error: { line: 2, category: "value" } }));
+  it("조건 표현식의 else 누락은 한국어 구문 오류", () => expect(() => compile('print(1 if True)')).toThrow(/else/));
+  it("함수 반복 else 안의 지역 대입은 정적 지역 변수", () => expect(execute('value = 100\ndef f():\n    print(value)\n    for n in []:\n        pass\n    else:\n        value = 1\nf()').at(-1)).toMatchObject({ type: "error", error: { line: 3, category: "name" } }));
+});

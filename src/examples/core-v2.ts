@@ -1,0 +1,13 @@
+import type { LearningExample } from "./model";
+const example = (id: string, title: string, topics: string[], code: string, expectedOutput: string, order: number): LearningExample => ({ id: `core-v2-${id}`, collection: "core", title, topics, code, expectedOutput, order, summary: "교육용 Python Core v2 자체 제작 예제", status: "ready", suggestedFileName: `${id}.py` });
+export const CORE_EXAMPLES: readonly LearningExample[] = [
+  example("recursion", "재귀 팩토리얼", ["함수"], 'def factorial(n):\n    if n <= 1:\n        return 1\n    return n * factorial(n - 1)\n\nprint(factorial(5))', '120\n', 1),
+  example("loop-else", "반복문 else와 소수", ["반복문"], 'for number in range(2, 10):\n    for divisor in range(2, number):\n        if number % divisor == 0:\n            break\n    else:\n        print(number)', '2\n3\n5\n7\n', 2),
+  example("comprehensions", "집합과 딕셔너리 내포", ["리스트·컬렉션"], 'unique = {number for number in [1, 2, 2, 3, 4]}\nsquares = {number: number * number for number in sorted(unique)}\nprint(sorted(unique))\nprint(squares)', '[1, 2, 3, 4]\n{1: 1, 2: 4, 3: 9, 4: 16}\n', 3),
+  example("lambda-sort", "람다로 정렬하기", ["함수", "리스트·컬렉션"], 'students = [("민수", 80), ("지수", 95)]\nstudents.sort(key=lambda student: student[1], reverse=True)\nfor index, student in enumerate(students, start=1):\n    print(index, student)', "1 ('지수', 95)\n2 ('민수', 80)\n", 4),
+  example("finally", "raise와 finally", ["예외 처리"], 'def read_number(value):\n    try:\n        number = int(value)\n        if number < 0:\n            raise ValueError("음수는 사용할 수 없습니다.")\n        return number\n    finally:\n        print("검사 완료")\n\nprint(read_number("17"))', '검사 완료\n17\n', 5),
+  example("variadic", "가변 인수와 호출 언패킹", ["함수"], 'def total(*numbers):\n    return sum(numbers)\n\nvalues = [10, 20, 30]\nprint(total(*values))', '60\n', 6),
+  example("inheritance", "단일 상속과 super", ["클래스"], 'class Person:\n    def __init__(self, name):\n        self.name = name\n\nclass Student(Person):\n    def __init__(self, name, grade):\n        super().__init__(name)\n        self.grade = grade\n\nstudent = Student("민수", 2)\nprint(student.name, student.grade)\nprint(isinstance(student, Person))', '민수 2\nTrue\n', 7),
+  { ...example("modules", "저장된 Python 모듈", ["함수", "파일 입출력"], 'from calculator import add\nprint(add(3, 4))', '7\n', 8), status: "data", summary: "임시 실행은 첨부 모듈을 사용합니다. 편집기에서는 calculator.py를 먼저 명시적으로 저장하세요.", dataFiles: [{ name: "calculator.py", content: 'def add(a, b):\n    return a + b', encoding: "utf-8" }] },
+  example("math", "math 기본 함수", ["math"], 'import math\n\nprint(math.sqrt(81))\nprint(math.factorial(5))\nprint(round(math.pi, 2))', '9.0\n120\n3.14\n', 9),
+];

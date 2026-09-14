@@ -1,0 +1,22 @@
+import { describe, expect, it } from "vitest";
+import { compile } from "../compiler/compiler";
+import { VM, type VMEvent } from "./vm";
+const run = (source: string, files: Record<string, string> = {}) => { const events: VMEvent[] = []; new VM(compile(source), event => events.push(event), new Map(Object.entries(files)), { fileName: "main.py" }).execute(); return events; };
+const prints = (source: string, files: Record<string, string>, expected: string) => { const events = run(source, files); expect(events.at(-1)).toEqual({ type: "complete" }); expect(events.filter(e => e.type === "output").map(e => e.text).join("")).toBe(expected + "\n"); };
+describe("Core v2 저장된 Python 모듈", () => {
+  const calculator = { "calculator.py": 'def add(a, b):\n    return a + b' };
+  it.each(['import calculator\nprint(calculator.add(3, 4))', 'import calculator as c\nprint(c.add(3, 4))', 'from calculator import add\nprint(add(3, 4))', 'from calculator import add as plus\nprint(plus(3, 4))'])("가져오기 문법 %s", code => prints(code, calculator, '7'));
+  it("캐시와 모듈 동일성", () => prints('import m\nimport m as second\nprint(m is second)', { 'm.py': 'print("초기화")' }, '초기화\nTrue'));
+  it("모듈별 전역 및 name", () => prints('x = 9\nimport m\nprint(__name__, m.__name__, m.read(), x)', { 'm.py': 'x = 3\ndef read():\n    global x\n    x += 1\n    return x' }, '__main__ m 4 9'));
+  it("모듈 클래스와 재귀", () => prints('from m import A\nprint(A().fact(5))', { 'm.py': 'class A:\n    def fact(self, n):\n        return 1 if n == 0 else n * self.fact(n - 1)' }, '120'));
+  it("모듈 안 파일 입출력", () => prints('import m', { 'm.py': 'with open("result.txt", "w") as f:\n    f.write("저장")\nwith open("result.txt") as f:\n    print(f.read())' }, '저장'));
+  it("모듈 함수의 실제 오류 파일명과 줄", () => expect(run('import m\nm.f()', { 'm.py': 'def f():\n    return missing' }).at(-1)).toMatchObject({ type: "error", error: { fileName: 'm.py', line: 2, pythonType: 'NameError' } }));
+  it("모듈 문법 오류 위치", () => expect(run('import m', { 'm.py': 'x =\n' }).at(-1)).toMatchObject({ type: "error", error: { fileName: 'm.py', line: 1, pythonType: 'SyntaxError' } }));
+  it("모듈 오류를 호출자가 처리하고 복귀", () => prints('try:\n    import m\nexcept ValueError:\n    print("처리")\nprint(__name__)', { 'm.py': 'raise ValueError("잘못된 값")' }, '처리\n__main__'));
+  it("실패한 모듈은 캐시에 남지 않음", () => prints('for n in range(2):\n    try:\n        import m\n    except ValueError:\n        pass', { 'm.py': 'print("시도")\nraise ValueError("오류")' }, '시도\n시도'));
+  it("순환 import", () => expect(run('import a', { 'a.py': 'import b', 'b.py': 'import a' }).at(-1)).toMatchObject({ type: "error", error: { fileName: 'b.py', line: 1, pythonType: 'ImportError' } }));
+  it("저장된 모듈이 없으면 거부", () => expect(run('import draft').at(-1)).toMatchObject({ type: "error", error: { fileName: 'main.py', line: 1, pythonType: 'ImportError' } }));
+  it("없는 가져올 이름", () => expect(run('from calculator import missing', calculator).at(-1)).toMatchObject({ type: "error", error: { fileName: 'main.py', line: 1, pythonType: 'ImportError' } }));
+  it("실행 중 파일 생성은 시작 스냅샷에 추가하지 않음", () => prints('with open("draft.py", "w") as f:\n    f.write("x = 1")\ntry:\n    import draft\nexcept ImportError:\n    print("저장 스냅샷만")', {}, '저장 스냅샷만'));
+  it("모듈 input 대기", () => { const events: VMEvent[] = []; const vm = new VM(compile('import m\nprint(m.value)'), event => events.push(event), new Map([['m.py', 'value = input("값: ")']])); vm.execute(); expect(events.at(-1)).toEqual({ type: 'input', prompt: '값: ' }); vm.resume('정상'); expect(events.filter(e => e.type === 'output').map(e => e.text).join('')).toBe('정상\n'); expect(events.at(-1)).toEqual({ type: 'complete' }); });
+});

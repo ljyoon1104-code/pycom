@@ -1,4 +1,5 @@
 import { type TurtleMethodValue, type TurtleValue, type TupleValue, type Value } from "./value";
+import { numeric, numberValue } from "./numbers-v2";
 
 export type TurtleGraphicsCommand =
   | { type: "reset" }
@@ -23,8 +24,8 @@ const aliases: Record<string, string> = {
 const typeError = (message: string): never => { throw new TurtleError("TypeError", message); };
 const valueError = (message: string): never => { throw new TurtleError("ValueError", message); };
 const number = (value: Value, label: string): number => {
-  if (typeof value !== "number" || !Number.isFinite(value)) throw new TurtleError("TypeError", `${label}에는 숫자가 필요합니다.`);
-  return value;
+  if (!numeric(value) || !Number.isFinite(numberValue(value))) throw new TurtleError("TypeError", `${label}에는 숫자가 필요합니다.`);
+  return numberValue(value);
 };
 const normalizeHeading = (heading: number) => ((heading % 360) + 360) % 360;
 const cleanCoordinate = (value: number) => { const rounded = Math.round(value); return Math.abs(value - rounded) < 1e-12 ? rounded : value; };

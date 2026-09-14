@@ -22,7 +22,7 @@ self.onmessage = ({ data }: MessageEvent<ToWorker>) => {
       else if (event.type === "complete" || event.type === "stopped") { flushOutput(); flushGraphics(); post(event); vm = undefined; }
       else if (event.type === "error") { flushOutput(); flushGraphics(); post(event); }
       else post(event);
-    }, new Map(data.files.map(file => [file.name, file.content])), { fileEncodings: new Map(data.files.map(file => [file.name, file.encoding ?? "utf-8"])) });
+    }, new Map(data.files.map(file => [file.name, file.content])), { fileName: data.fileName ?? "main.py", fileEncodings: new Map(data.files.map(file => [file.name, file.encoding ?? "utf-8"])) });
     vm.executeAsync();
   } catch (error) {
     if (error instanceof CompilerError) post({ type: "error", error: error.detail });

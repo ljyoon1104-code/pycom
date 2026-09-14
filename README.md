@@ -88,7 +88,42 @@
 
 ## 기본 표준 라이브러리 (11단계)
 
-- 허용된 모듈은 앱에 포함된 `random`, `datetime`뿐입니다. 일반 사용자 모듈·외부 패키지·네트워크 import는 지원하지 않습니다.
+## 교육용 Python Core v2.0 지원 범위
+
+기존 자체 Lexer → Parser → AST → 바이트코드 → VM을 사용합니다. CPython 전체 호환 구현이 아니며 외부 실행기·서버·CDN을 사용하지 않습니다.
+
+| 영역 | 지원 |
+| --- | --- |
+| 제어·예외 | for/while else, 조건 표현식, 재귀, raise/bare raise, try/except/else/finally, assert, del |
+| 컬렉션 | 집합과 기본 연산/메서드, 리스트·딕셔너리·집합 내포, step 슬라이싱, 별표 언패킹 |
+| 함수 | 기본값·키워드·가변 인수, 람다, 중첩 함수·어휘적 클로저·nonlocal |
+| 내장 함수 | abs, round, pow(정수 mod 포함), divmod, enumerate, zip, sorted(key/reverse), reversed, any/all, chr/ord, bin/oct/hex 및 기존 내장 함수 |
+| 리스트 | append, extend, insert, remove, pop, clear, index, count, sort(key/reverse), reverse, copy |
+| 문자열 | join, find/rfind/index/count, startswith/endswith, lower/upper/capitalize/title, isdigit/isalpha/isalnum/isspace, strip/lstrip/rstrip, split/rsplit, replace, center/ljust/rjust/zfill |
+| 딕셔너리 | keys/values/items, get/setdefault, update(딕셔너리·키값 쌍·키워드), pop/popitem, clear/copy/fromkeys |
+| 클래스 | 단일 상속, 부모 생성자·속성·메서드, 사용자 클래스 isinstance/issubclass, 인수 없는 super() |
+| math | pi/e/tau/inf/nan; sqrt, ceil/floor/trunc/fabs, factorial/gcd/pow, sin/cos/tan, radians/degrees, log/log10/exp, isfinite/isinf/isnan |
+
+### 저장된 Python 모듈
+
+`calculator.py`를 명시적으로 저장한 다음 다른 탭에서 `import calculator`, `import calculator as calc`, `from calculator import add` 또는 별칭 가져오기를 사용합니다. 실행 시작 시 저장본만 Worker로 전달되며 미저장 초안은 가져오지 않습니다. 각 모듈은 독립 전역 환경과 `__name__`을 가지며 실행당 한 번 초기화됩니다. 순환 가져오기는 오류입니다. 파일 이름은 Python 식별자로 사용할 수 있어야 하며 폴더·경로·패키지·와일드카드는 제외합니다. 오류에는 실제 발생한 모듈 파일명·줄이 표시됩니다.
+
+### 의미와 안전 제한
+
+- `round`는 가장 가까운 짝수 반올림을 사용합니다. `1.0`, `-0.0`, `inf`, `nan`과 컬렉션 내부 실수 표기를 유지합니다. 극단적인 부동소수점 결과의 모든 자릿수를 CPython과 동일하게 보장하지는 않습니다.
+- 정수 정밀도는 ±(2⁵³−1) 범위입니다. 임의 정밀도 정수는 제외하며 `math.factorial`은 정확한 결과를 위해 18까지 지원합니다.
+- 값 비교는 `==`, `None` 또는 공유 객체 확인은 `is`를 사용합니다. CPython의 숫자·문자열 객체 캐싱 최적화는 복제하지 않습니다.
+- 정렬은 안정적이며 key를 요소마다 한 번 호출합니다. key 안의 input·예외·중지는 일반 VM 프레임으로 처리합니다. 현재 map 안의 input은 제외합니다.
+- 호출 깊이 128, 명령 1,000,000, 반복/컬렉션 10,000, 출력/문자열 약 100,000자 제한이 적용됩니다. 앱 실행 중단 신호는 학생 except에서 잡을 수 없습니다.
+- Unicode 문자열 판별·대소문자 변환의 일부 드문 문자는 CPython과 차이가 있을 수 있습니다. 딕셔너리 keys/values/items는 현재 시점의 목록을 반환합니다.
+- 기초 11개·교과서 56개는 유지하며 예제 페이지에 Core 자체 제작 예제 9개를 추가했습니다. 모듈 예제는 임시 실행용 모듈을 포함합니다.
+- 저장 형식·탭·백업 버전은 바꾸지 않습니다. 자동 저장하지 않으며 학생 파일은 기기에 남습니다.
+
+계속 제외: yield와 제너레이터 표현식, async/await, 데코레이터, 다중 상속, property/descriptor/메타클래스, 구조적 패턴 매칭, 패키지·폴더·상대·동적 import, 외부 패키지, 전체 표준 라이브러리, 전체 turtle API, EUC-KR 쓰기.
+
+### 기존 random·datetime 안내
+
+- 내장 모듈은 `random`, `datetime.date`, `math`, 교육용 `turtle`입니다. Core v2에서는 같은 저장소에 명시적으로 저장된 `.py`도 가져올 수 있습니다. 외부 패키지·네트워크 import는 지원하지 않습니다.
 - `import random as rnd`, `import datetime`, `from datetime import date as Date`를 사용할 수 있습니다. 지원하지 않는 가져오기는 `ImportError`로 처리합니다.
 - `random.seed`, `randint`, `randrange`, `choice`, `sample`을 지원합니다. 실행별 Mulberry32 상태를 사용하며 같은 시드·호출 순서는 재현됩니다. CPython과 시드별 난수열이 같다는 의미는 아니며 보안용 난수가 아닙니다.
 - `sample`은 원본 위치를 중복 선택하지 않는 비복원 추출이며 원본을 변경하지 않습니다. Python처럼 원본에 같은 값이 여러 번 들어 있다면 서로 다른 위치의 같은 값이 선택될 수 있습니다. 한 번에 최대 10000개를 선택합니다.

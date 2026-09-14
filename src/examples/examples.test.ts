@@ -5,6 +5,7 @@ import { CLASSROOM_EXAMPLES } from "../app/classroom";
 import { appFile, validateFileSet, validFileName } from "../files/storage";
 import { buildRestoreSet, createWorkspaceBackup } from "../files/backup";
 import { TEXTBOOK_EXAMPLES } from "./catalog";
+import { CORE_EXAMPLES } from "./core-v2";
 import { emptyFilters, exampleHash, exampleRoute, filterExamples, STATUS, TOPICS, type LearningExample } from "./model";
 import { ExampleRunner, type ExampleWorker } from "./runner";
 import type { FromWorker, ToWorker } from "../runtime/protocol";
@@ -40,7 +41,7 @@ describe("textbook catalog", () => {
     expect(filterExamples(TEXTBOOK_EXAMPLES, { ...emptyFilters(), query }).length).toBeGreaterThan(0);
   });
   it.each(TOPICS)("filters topic %s", topic => {
-    const results = filterExamples(TEXTBOOK_EXAMPLES, { ...emptyFilters(), topic });
+    const results = filterExamples([...TEXTBOOK_EXAMPLES, ...CORE_EXAMPLES], { ...emptyFilters(), topic });
     expect(results.length).toBeGreaterThan(0); expect(results.every(e => e.topics.includes(topic))).toBe(true);
   });
   it.each(Object.keys(STATUS))("filters status %s", status => {

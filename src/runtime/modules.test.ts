@@ -25,9 +25,9 @@ describe("limited built-in imports", () => {
   ])("loads through normal names: %s", (code, expected) => output(code, expected));
   it("exposes callable values and preserves module identity across imports", () => output('import random\nimport random as other\npick = random.randint\nprint(random == other)\nprint(pick(4, 4))', 'True\n4\n'));
   it("binds imports locally inside functions", () => output('def choose():\n    import random as rnd\n    return rnd.randint(3, 3)\nprint(choose())\ntry:\n    print(rnd)\nexcept NameError:\n    print("지역 이름")', '3\n지역 이름\n'));
-  it("reports unsupported imports at the original line", () => {
+  it("reports missing saved modules at the original line without loading OS libraries", () => {
     const result = run('\nimport os');
-    expect(result.error).toMatchObject({ error: { line: 2, column: 1, message: "'os' 모듈은 현재 버전에서 지원하지 않습니다." } });
+    expect(result.error).toMatchObject({ error: { line: 2, column: 1, pythonType: "ImportError", message: "'os.py' 저장 파일을 찾을 수 없습니다." } });
   });
 });
 

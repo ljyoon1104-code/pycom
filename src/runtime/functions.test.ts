@@ -8,7 +8,7 @@ const output = (events: VMEvent[]) => events.filter((event): event is Extract<VM
 describe("4단계 함수", () => {
   it("매개변수 없는 함수와 명시적·암시적 None 반환을 처리한다", () => expect(output(execute('def hello():\n    print("안녕")\ndef empty():\n    return\ndef implicit():\n    print("x")\nhello()\nprint(empty())\nprint(implicit())').events)).toBe("안녕\nNone\nx\nNone\n"));
   it("매개변수, 조건문과 반복문 안의 return을 처리한다", () => expect(output(execute('def find(values):\n    for value in values:\n        if value > 2:\n            return value\n    return 0\nprint(find([1, 2, 3]))').events)).toBe("3\n"));
-  it("지역 변수는 분리되고 전역 변수는 읽는다", () => expect(output(execute('value = 10\ntax = 0.1\ndef change(price):\n    value = 20\n    print(value)\n    return price + price * tax\nprint(change(100))\nprint(value)').events)).toBe("20\n110\n10\n"));
+  it("지역 변수는 분리되고 전역 변수는 읽는다", () => expect(output(execute('value = 10\ntax = 0.1\ndef change(price):\n    value = 20\n    print(value)\n    return price + price * tax\nprint(change(100))\nprint(value)').events)).toBe("20\n110.0\n10\n"));
   it("초기화되지 않은 지역 변수 오류를 표시한다", () => expect(execute('value = 10\ndef wrong():\n    print(value)\n    value = 20\nwrong()').events.at(-1)).toMatchObject({ type: "error", error: { category: "name", line: 3 } }));
   it("global로 전역값을 변경한다", () => expect(output(execute('total = 0\ndef add(price):\n    global total\n    total += price\nadd(3)\nadd(2)\nprint(total)').events)).toBe("5\n"));
   it("기본값은 정의 시 한 번 평가되고 키워드 인수를 받는다", () => expect(output(execute('def add(item, values=[]):\n    values.append(item)\n    return values\ndef introduce(name, age=17):\n    print(name, age)\nprint(add("A"))\nprint(add("B"))\nintroduce(age=18, name="지수")').events)).toBe("['A']\n['A', 'B']\n지수 18\n"));

@@ -1,5 +1,6 @@
 import { isList, isRange, isTuple, type DateValue, type ModuleValue, type TurtleMethodValue, type TurtleValue, type Value } from "./value";
 import { TurtleRuntime, type TurtleGraphicsCommand } from "./turtle";
+import { mathModule, mathBuiltin } from "./math-v2";
 
 export interface ModuleOptions { clock?: () => Date; entropy?: () => number; emitGraphics?: (command: TurtleGraphicsCommand) => void; maxGraphicsCommands?: number; }
 export class ModuleError extends Error {
@@ -22,6 +23,7 @@ export class BuiltinModules {
   private readonly today = { kind: "builtin", name: "datetime.date.today" } as const;
   private readonly turtle: TurtleRuntime;
   constructor(private readonly options: ModuleOptions = {}) {
+    this.modules.set("math", mathModule());
     this.state = (options.entropy ?? entropy)() >>> 0;
     this.modules.set("random", { kind: "module", name: "random", attributes: new Map(
       ["seed", "randint", "randrange", "choice", "sample"].map(name => [name, { kind: "builtin", name: `random.${name}` } as Value]),
@@ -37,9 +39,11 @@ export class BuiltinModules {
     const value = this.modules.get(module);
     if (!value) return invalid("ImportError", `'${module}' 모듈은 현재 버전에서 지원하지 않습니다.`);
     if (member === undefined) return value;
+    if (module === "math" && value.attributes.has(member)) return value.attributes.get(member)!;
     if (module === "datetime" && member === "date") return value.attributes.get(member)!;
     return invalid("ImportError", `'${module}'에서 '${member}' 가져오기는 지원하지 않습니다.`);
   }
+  has(module: string): boolean { return this.modules.has(module); }
   dateAttribute(name: string): Value {
     if (name === "today") return this.today;
     return invalid("AttributeError", `date에 '${name}' 속성이 없습니다.`);
@@ -81,6 +85,7 @@ export class BuiltinModules {
     return Object.freeze({ kind: "date", year, month, day });
   }
   invoke(name: string, args: Value[], keywords: Record<string, Value>): Value {
+    if (name.startsWith("math.")) return mathBuiltin(name, args, keywords);
     // Keywords use the same argument binding rules as ordinary calls; unknown or
     // duplicate names are errors, never silently discarded.
     const signatures: Record<string, string[]> = {

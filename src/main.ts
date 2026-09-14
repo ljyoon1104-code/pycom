@@ -1,4 +1,5 @@
 import "./styles/app.css";
+import { CORE_HELP } from "./app/core-help";
 import { initialCode } from "./app/initial-code";
 import { announceExecution } from "./app/execution-status";
 import { mountExampleBrowser } from "./examples/browser";
@@ -32,6 +33,7 @@ const operationsHelp = document.createElement("section"); operationsHelp.innerHT
 helpLayer.querySelector<HTMLElement>(".dialog-scroll")!.append(operationsHelp);
 helpLayer.querySelector<HTMLElement>(".dialog-actions")!.prepend(Object.assign(document.createElement("button"), { className: "show-diagnostics", type: "button", textContent: "환경 정보 확인" }));
 helpLayer.querySelector<HTMLElement>(".app-version")!.textContent = APP_VERSION;
+const coreHelp = document.createElement("section"); coreHelp.className = "core-help"; coreHelp.innerHTML = CORE_HELP; helpLayer.querySelector(".dialog-scroll")!.append(coreHelp);
 
 const focusReturns = new WeakMap<HTMLElement, HTMLElement>();
 const focusableIn = (layer: HTMLElement): HTMLElement[] => Array.from(layer.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')).filter(element => !element.hidden);
@@ -277,7 +279,12 @@ window.addEventListener("keydown", event => { if ((event.ctrlKey || event.metaKe
 function showInput(prompt: string): void { const source = worker; const row = document.createElement("form"); row.className = "input-row"; row.innerHTML = `<span class="input-owner"></span><span class="input-prompt"></span><input class="console-input" aria-label="프로그램 입력" autocomplete="off" /><button class="input-submit" type="submit">입력</button>`; row.querySelector<HTMLElement>(".input-owner")!.textContent = `입력 대기: ${execution?.name ?? ""}`; row.querySelector<HTMLElement>(".input-prompt")!.textContent = prompt; const input = row.querySelector<HTMLInputElement>("input")!; input.setAttribute("aria-label", `${execution?.name} 프로그램 입력`); row.addEventListener("submit", event => { event.preventDefault(); if (source !== worker) return; const value = input.value; const answer = document.createElement("span"); answer.className = "console-line"; answer.textContent = `${prompt}${value}\n`; row.replaceWith(answer); source?.postMessage({ type: "input", value } satisfies ToWorker); }); consoleEl.append(row); input.focus({ preventScroll: false }); row.scrollIntoView({ block: "nearest" }); }
 function finish(kind: "complete" | "stopped"): void { lastExecution = kind === "complete" ? "성공" : "사용자 중지"; executionStatus(kind === "complete" ? "실행이 완료되었습니다." : "실행이 중지되었습니다."); worker?.terminate(); worker = undefined; setRunning(false); }
 let fileWrites: Promise<void> = Promise.resolve();
-function receive(message: FromWorker): void { switch (message.type) { case "output": append(message.text); break; case "graphics": showGraphics(); turtleRenderer.apply(message.commands); break; case "input-request": showInput(message.prompt); break; case "file-change": { const file = appFile(message.name, message.content); fileWrites = fileWrites.then(async () => { await checkedPut(store, file); files.set(file.name, file); tabs.external(file); }).catch(() => append("파일 변경을 저장할 수 없습니다. 편집 내용은 유지됩니다.", "console-error")); break; } case "error": lastExecution = executionErrorCategory(message.error.message); if (execution) tabs.setError(execution.id, message.error.line); append(`${message.error.line}번째 줄: ${message.error.message}`, "console-error"); worker?.terminate(); worker = undefined; setRunning(false); break; case "complete": finish("complete"); break; case "stopped": finish("stopped"); break; } }
+function receive(message: FromWorker): void { switch (message.type) { case "output": append(message.text); break; case "graphics": showGraphics(); turtleRenderer.apply(message.commands); break; case "input-request": showInput(message.prompt); break; case "file-change": { const file = appFile(message.name, message.content); fileWrites = fileWrites.then(async () => { await checkedPut(store, file); files.set(file.name, file); tabs.external(file); }).catch(() => append("파일 변경을 저장할 수 없습니다. 편집 내용은 유지됩니다.", "console-error")); break; } case "error": {
+    lastExecution = executionErrorCategory(message.error.message);
+    const moduleError = message.error.fileName && message.error.fileName !== execution?.name;
+    if (execution && !moduleError) tabs.setError(execution.id, message.error.line);
+    append(`${moduleError ? `${message.error.fileName}: ` : ""}${message.error.line}번째 줄: ${message.error.message}`, "console-error"); worker?.terminate(); worker = undefined; setRunning(false); break;
+  } case "complete": finish("complete"); break; case "stopped": finish("stopped"); break; } }
 let runGeneration = 0;
 runButton.addEventListener("click", async () => {
   if (restoring) return;
@@ -294,7 +301,7 @@ runButton.addEventListener("click", async () => {
     if (worker !== source) return;
     lastExecution = "시스템 오류"; append("실행 중 오류가 발생했습니다.", "console-error"); source.terminate(); worker = undefined; setRunning(false);
   };
-  source.postMessage({ type: "run", code, files: [...files.values()].map(file => ({ name: file.name, content: file.content, encoding: file.encoding })) } satisfies ToWorker);
+  source.postMessage({ type: "run", code, fileName: name, files: [...files.values()].map(file => ({ name: file.name, content: file.content, encoding: file.encoding })) } satisfies ToWorker);
 });
 stopButton.addEventListener("click", () => worker?.postMessage({ type: "stop" } satisfies ToWorker));
 store.list().then(saved => { files = new Map(saved.map(file => [file.name, file])); tabs.initialize(files); renderFiles(); }).catch(() => append("저장소를 열 수 없습니다.", "console-error"));
