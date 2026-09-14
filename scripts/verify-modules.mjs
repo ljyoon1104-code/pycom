@@ -45,7 +45,7 @@ try {
     assert.equal(await page.locator(".console-error").count(), 0, name + ": student error");
     const output = await page.locator(".console-line").allTextContents();
     assert.equal(output.join(""), expected, name);
-    assert.ok((await page.locator(".console").innerText()).includes("실행이 완료되었습니다."));
+    assert.equal(await page.locator(".execution-live").textContent(), "실행이 완료되었습니다.");
     await page.locator(".save").click();
     await page.waitForFunction(() => document.querySelector(".modified").textContent === "");
     await page.screenshot({ path: directory + "/" + label + "-" + name + ".png", fullPage: true });

@@ -1,4 +1,4 @@
-# pycom — Python 학습실 v1.3.1 수업용 배포판
+# pycom — Python 학습실 v1.3.2 수업용 배포판
 
 학생 접속 주소: <https://ljyoon1104-code.github.io/pycom/>
 

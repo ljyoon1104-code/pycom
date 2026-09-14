@@ -1,5 +1,6 @@
 import "./styles/app.css";
 import { initialCode } from "./app/initial-code";
+import { announceExecution } from "./app/execution-status";
 import { mountExampleBrowser } from "./examples/browser";
 import type { LearningExample } from "./examples/model";
 import { CLASSROOM_EXAMPLES, exampleDocument, rememberWelcomeClosed, shouldShowWelcome, type ClassroomExample } from "./app/classroom";
@@ -62,8 +63,10 @@ let lastExecution: LastExecutionCategory = "실행 전";
 let files = new Map<string, AppFile>();
 const append = (text: string, className = "console-line") => { const node = document.createElement("span"); node.className = className; node.textContent = text; if (className === "console-error") node.setAttribute("role", "alert"); consoleEl.append(node); consoleEl.scrollTop = consoleEl.scrollHeight; };
 const clearConsole = () => consoleEl.replaceChildren();
+const executionLive = document.createElement("span"); executionLive.className = "execution-live sr-only"; app.querySelector(".topbar")!.append(executionLive); announceExecution(executionLive, "");
+const executionStatus = (text: string) => announceExecution(executionLive, text);
 const status = (text: string) => append(text, "console-status");
-const setRunning = (value: boolean) => { runButton.disabled = value && execution?.id === tabs?.active.id; stopButton.disabled = !value; consoleEl.setAttribute("aria-busy", String(value)); if (!value) consoleEl.querySelectorAll(".input-row").forEach(row => row.remove()); tabs?.render(); };
+const setRunning = (value: boolean) => { runButton.disabled = value && execution?.id === tabs?.active.id; stopButton.disabled = !value; consoleEl.setAttribute("aria-busy", String(value)); if (!value) { consoleEl.querySelectorAll(".input-row").forEach(row => row.remove()); if (executionLive.textContent === "실행 중입니다.") executionStatus("실행이 종료되었습니다."); } tabs?.render(); };
 const selectResult = (kind: "text" | "graphics") => { const graphics = kind === "graphics"; textView.hidden = graphics; graphicsView.hidden = !graphics; textTab.classList.toggle("selected", !graphics); graphicsTab.classList.toggle("selected", graphics); textTab.setAttribute("aria-selected", String(!graphics)); graphicsTab.setAttribute("aria-selected", String(graphics)); };
 const showGraphics = () => { graphicsTab.hidden = false; selectResult("graphics"); };
 const typeLabel = (name: string) => name.split(".").at(-1)?.toUpperCase() ?? "파일";
@@ -272,7 +275,7 @@ app.querySelector<HTMLButtonElement>(".tab-button")!.addEventListener("click", (
 window.addEventListener("beforeunload", event => { if (restoring) event.preventDefault(); });
 window.addEventListener("keydown", event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (!restoring) void tabs.save(event.shiftKey); } });
 function showInput(prompt: string): void { const source = worker; const row = document.createElement("form"); row.className = "input-row"; row.innerHTML = `<span class="input-owner"></span><span class="input-prompt"></span><input class="console-input" aria-label="프로그램 입력" autocomplete="off" /><button class="input-submit" type="submit">입력</button>`; row.querySelector<HTMLElement>(".input-owner")!.textContent = `입력 대기: ${execution?.name ?? ""}`; row.querySelector<HTMLElement>(".input-prompt")!.textContent = prompt; const input = row.querySelector<HTMLInputElement>("input")!; input.setAttribute("aria-label", `${execution?.name} 프로그램 입력`); row.addEventListener("submit", event => { event.preventDefault(); if (source !== worker) return; const value = input.value; const answer = document.createElement("span"); answer.className = "console-line"; answer.textContent = `${prompt}${value}\n`; row.replaceWith(answer); source?.postMessage({ type: "input", value } satisfies ToWorker); }); consoleEl.append(row); input.focus({ preventScroll: false }); row.scrollIntoView({ block: "nearest" }); }
-function finish(kind: "complete" | "stopped"): void { lastExecution = kind === "complete" ? "성공" : "사용자 중지"; status(kind === "complete" ? "실행이 완료되었습니다." : "실행이 중지되었습니다."); worker?.terminate(); worker = undefined; setRunning(false); }
+function finish(kind: "complete" | "stopped"): void { lastExecution = kind === "complete" ? "성공" : "사용자 중지"; executionStatus(kind === "complete" ? "실행이 완료되었습니다." : "실행이 중지되었습니다."); worker?.terminate(); worker = undefined; setRunning(false); }
 let fileWrites: Promise<void> = Promise.resolve();
 function receive(message: FromWorker): void { switch (message.type) { case "output": append(message.text); break; case "graphics": showGraphics(); turtleRenderer.apply(message.commands); break; case "input-request": showInput(message.prompt); break; case "file-change": { const file = appFile(message.name, message.content); fileWrites = fileWrites.then(async () => { await checkedPut(store, file); files.set(file.name, file); tabs.external(file); }).catch(() => append("파일 변경을 저장할 수 없습니다. 편집 내용은 유지됩니다.", "console-error")); break; } case "error": lastExecution = executionErrorCategory(message.error.message); if (execution) tabs.setError(execution.id, message.error.line); append(`${message.error.line}번째 줄: ${message.error.message}`, "console-error"); worker?.terminate(); worker = undefined; setRunning(false); break; case "complete": finish("complete"); break; case "stopped": finish("stopped"); break; } }
 let runGeneration = 0;
@@ -284,7 +287,7 @@ runButton.addEventListener("click", async () => {
   await fileWrites;
   if (restoring || generation !== runGeneration) return;
   clearConsole(); turtleRenderer.reset(); graphicsTab.hidden = true; selectResult("text");
-  execution = { id, name }; resultOwner.textContent = `실행: ${name}`; tabs.setError(id, null); status("실행 중...");
+  execution = { id, name }; resultOwner.textContent = `실행: ${name}`; tabs.setError(id, null); executionStatus("실행 중입니다.");
   const source = new Worker(new URL("./runtime/worker.ts", import.meta.url), { type: "module" }); worker = source; setRunning(true);
   source.onmessage = ({ data }: MessageEvent<FromWorker>) => { if (worker === source) receive(data); };
   source.onerror = () => {

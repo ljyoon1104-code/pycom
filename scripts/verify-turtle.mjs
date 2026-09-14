@@ -126,7 +126,7 @@ try {
     await execute(page, penUp); const penUpPixels = await canvasPixels(page); assert.ok(penUpPixels.nonBackground > 150, "penup 이후 재개 선분이 렌더링되지 않았습니다.");
     await page.screenshot({ path: join(outputDirectory, "turtle-penup.png"), fullPage: true });
     await page.setViewportSize({ width: 800, height: 640 }); await page.waitForTimeout(80); const resizedPixels = await canvasPixels(page); assert.ok(resizedPixels.nonBackground > 150, "크기 변경 뒤 그림이 보존되지 않았습니다.");
-    await replaceCode(page, "import turtle\nt=turtle.Turtle()\nfor i in range(10000):\n    t.forward(1)"); await page.locator(".run").click(); await page.locator(".graphics-tab").waitFor({ state: "visible" }); await page.locator(".stop").click(); await page.waitForFunction(() => !document.querySelector(".run")?.hasAttribute("disabled")); assert.match(await page.locator(".console").innerText(), /실행이 중지되었습니다/);
+    await replaceCode(page, "import turtle\nt=turtle.Turtle()\nfor i in range(10000):\n    t.forward(1)"); await page.locator(".run").click(); await page.locator(".graphics-tab").waitFor({ state: "visible" }); await page.locator(".stop").click(); await page.waitForFunction(() => !document.querySelector(".run")?.hasAttribute("disabled")); assert.match(await page.locator(".execution-live").textContent(), /실행이 중지되었습니다/);
     await execute(page, square); assert.ok((await canvasPixels(page)).nonBackground > 350, "중지 후 새 실행이 정상 렌더링되지 않았습니다.");
     report.scenarios = { colors: colored, penUp: penUpPixels, resizedPixels, stopAndRestart: true };
 

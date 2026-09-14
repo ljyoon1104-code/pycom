@@ -74,11 +74,11 @@ export function mountExampleBrowser(parent: HTMLElement, onVisibility: (active: 
     const linkField = element("input", "", "example-link"); linkField.readOnly = true; linkField.hidden = true; linkField.setAttribute("aria-label", "선택하여 복사할 예제 주소");
     const copy = button("예제 링크 복사", async () => {
       const url = new URL(exampleHash(example.id), location.href).href;
-      try { await navigator.clipboard.writeText(url); live.textContent = "예제 링크를 복사했습니다."; }
-      catch { linkField.hidden = false; linkField.value = url; linkField.focus(); linkField.select(); live.textContent = "주소를 선택했습니다. 복사해 주세요."; }
+      try { await navigator.clipboard.writeText(url); announceExecution(live, "예제 링크를 복사했습니다.", true); }
+      catch { linkField.hidden = false; linkField.value = url; linkField.focus(); linkField.select(); announceExecution(live, "주소를 선택했습니다. 복사해 주세요.", true); }
     }, "example-copy");
     controls.append(run, stop, editButton, copy);
-    const live = element("p", "실행 준비", "example-live"); live.setAttribute("role", "status"); live.setAttribute("aria-live", "polite");
+    const live = element("p", "", "example-live"); announceExecution(live, "실행 준비");
     const output = element("pre", "", "example-output"); output.setAttribute("aria-label", "실제 실행 결과"); output.tabIndex = 0;
     const inputForm = element("form", "", "example-input-form"), inputLabel = element("label"), input = element("input"), submit = element("button", "입력"); submit.type = "submit";
     input.id = "example-answer"; input.autocomplete = "off"; inputLabel.htmlFor = input.id; inputForm.hidden = true; inputForm.append(inputLabel, input, submit);
@@ -89,14 +89,14 @@ export function mountExampleBrowser(parent: HTMLElement, onVisibility: (active: 
     runner = new ExampleRunner(() => new Worker(new URL("../runtime/worker.ts", import.meta.url), { type: "module" }) as unknown as ExampleWorker, event => {
       if (event.type === "output") output.textContent += event.text;
       else if (event.type === "graphics") { canvas.hidden = false; graphics?.apply(event.commands); }
-      else if (event.type === "input-request") { inputLabel.textContent = event.prompt || "입력값"; input.value = ""; inputForm.hidden = false; live.textContent = "입력을 기다리고 있습니다."; input.focus(); }
-      else if (event.type === "error") { viewer?.setError(event.error.line); live.textContent = `${event.error.line}번째 줄: ${event.error.message}`; setRunning(false); }
-      else if (event.type === "complete" || event.type === "stopped") { live.textContent = event.type === "complete" ? "실행 완료" : "실행 중지"; setRunning(false); }
+      else if (event.type === "input-request") { inputLabel.textContent = event.prompt || "입력값"; input.value = ""; inputForm.hidden = false; announceExecution(live, "입력을 기다리고 있습니다."); input.focus(); }
+      else if (event.type === "error") { viewer?.setError(event.error.line); announceExecution(live, `${event.error.line}번째 줄: ${event.error.message}`, true); setRunning(false); }
+      else if (event.type === "complete" || event.type === "stopped") { announceExecution(live, event.type === "complete" ? "실행 완료" : "실행 중지"); setRunning(false); }
     });
-    inputForm.onsubmit = event => { event.preventDefault(); const value = input.value; inputForm.hidden = true; live.textContent = "실행 중"; runner?.input(value); };
+    inputForm.onsubmit = event => { event.preventDefault(); const value = input.value; inputForm.hidden = true; announceExecution(live, "실행 중"); runner?.input(value); };
     function start() {
-      output.textContent = ""; canvas.hidden = true; graphics?.reset(); viewer?.setError(null); inputForm.hidden = true; live.textContent = "실행 중"; setRunning(true);
-      try { runner?.start(example); } catch { live.textContent = "예제를 준비할 수 없습니다. 파일 크기와 이름을 확인해 주세요."; setRunning(false); }
+      output.textContent = ""; canvas.hidden = true; graphics?.reset(); viewer?.setError(null); inputForm.hidden = true; announceExecution(live, "실행 중"); setRunning(true);
+      try { runner?.start(example); } catch { announceExecution(live, "예제를 준비할 수 없습니다. 파일 크기와 이름을 확인해 주세요.", true); setRunning(false); }
     }
     requestAnimationFrame(() => { if (title.isConnected) title.focus(); });
   }
@@ -112,3 +112,4 @@ export function mountExampleBrowser(parent: HTMLElement, onVisibility: (active: 
   }
   window.addEventListener("hashchange", route); route();
 }
+import { announceExecution } from "../app/execution-status";
