@@ -25,7 +25,7 @@ describe("Core v2 math", () => {
     ['isfinite(math.pi)', 'True'], ['isinf(math.inf)', 'True'], ['isnan(math.nan)', 'True'],
   ])("math.%s", (expression, expected) => prints(`import math\nprint(math.${expression})`, expected));
   it.each([
-    ['sqrt(-1)', 'ValueError'], ['log(0)', 'ValueError'], ['log(2, 1)', 'ValueError'], ['factorial(-1)', 'ValueError'],
-    ['factorial(3.0)', 'TypeError'], ['gcd(1.5, 2)', 'TypeError'], ['sqrt("4")', 'TypeError'], ['sqrt()', 'TypeError'], ['exp(1000)', 'ValueError'],
+    ['sqrt(-1)', 'ValueError'], ['log(0)', 'ValueError'], ['log(2, 1)', 'ZeroDivisionError'], ['factorial(-1)', 'ValueError'],
+    ['factorial(3.0)', 'TypeError'], ['gcd(1.5, 2)', 'TypeError'], ['sqrt("4")', 'TypeError'], ['sqrt()', 'TypeError'], ['exp(1000)', 'OverflowError'],
   ])("math 오류 %s", (expression, pythonType) => expect(run(`import math\nmath.${expression}`).at(-1)).toMatchObject({ type: 'error', error: { line: 2, pythonType } }));
 });

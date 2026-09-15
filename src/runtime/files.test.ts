@@ -8,7 +8,7 @@ const output = (events: VMEvent[]) => events.filter((event): event is Extract<VM
 const error = (code: string, files?: Record<string, string>) => execute(code, files).at(-1) as Extract<VMEvent, { type: "error" }>;
 
 describe("6단계 파일", () => {
-  it("기본 읽기와 read 계열을 처리한다", () => expect(output(execute('file = open("memo.txt")\nprint(file.read(2))\nprint(file.readline())\nprint(file.readlines())', { "memo.txt": "가나다\n라마\n" }))).toBe("가나\n다\n\n['라마\n']\n"));
+  it("기본 읽기와 read 계열을 처리한다", () => expect(output(execute('file = open("memo.txt")\nprint(file.read(2))\nprint(file.readline())\nprint(file.readlines())', { "memo.txt": "가나다\n라마\n" }))).toBe("가나\n다\n\n['라마\\n']\n"));
   it("w와 a 모드의 생성·비우기·이어쓰기를 처리한다", () => { const events = execute('file = open("memo.txt", "w")\nprint(file.write("첫째\\n"))\nfile.close()\nfile = open("memo.txt", "a")\nfile.write("둘째")\nfile.close()', { "memo.txt": "이전" }); expect(output(events)).toBe("3\n"); expect(events.filter((event): event is Extract<VMEvent, { type: "file-change" }> => event.type === "file-change").at(-1)).toMatchObject({ name: "memo.txt", content: "첫째\n둘째" }); });
   it("close, closed, 줄 순회와 with 종료를 처리한다", () => expect(output(execute('with open("memo.txt", "r") as file:\n    for line in file:\n        print(line, end="")\nprint(file.closed)', { "memo.txt": "a\nb\n" }))).toBe("a\nb\nTrue\n"));
   it("with에서 오류가 나도 파일을 닫는다", () => { const events = execute('with open("memo.txt", "w") as file:\n    file.write("ok")\n    1 / 0'); expect(events.at(-1)).toMatchObject({ type: "error", error: { line: 3 } }); expect(events.filter((event): event is Extract<VMEvent, { type: "file-change" }> => event.type === "file-change").at(-1)).toMatchObject({ name: "memo.txt", content: "ok" }); });

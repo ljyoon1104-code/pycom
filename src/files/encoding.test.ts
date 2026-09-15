@@ -59,14 +59,14 @@ describe("EUC-KR CSV와 Python open", () => {
   const files = { "students-euckr.csv": decodeImportedBytes(EUC_KR_CSV, "auto").content };
   it("readline과 readlines로 CRLF CSV를 읽는다", () => {
     const result = run('with open("students-euckr.csv", "r", encoding="euc-kr") as file:\n    print(file.readline(), end="")\n    print(file.readlines())', files);
-    expect(result.output).toBe("이름,점수\r\n['민수,90\r\n', '지수,95\r\n']\n");
+    expect(result.output).toBe("이름,점수\n['민수,90\\n', '지수,95\\n']\n");
   });
   it("strip과 split으로 한글 CSV 열을 처리한다", () => {
     const result = run('with open("students-euckr.csv", "r", encoding="cp949") as file:\n    file.readline()\n    for line in file.readlines():\n        values = line.strip().split(",")\n        print(values[0], values[1])', files);
     expect(result.output).toBe("민수 90\n지수 95\n");
   });
   it.each(["euc-kr", "euc_kr", "cp949", "EUC-KR"])("%s 별칭과 LF 줄바꿈을 open에서 처리한다", encoding => {
-    expect(run(`with open("a.csv", encoding="${encoding}") as file:\n    print(file.readlines())`, { "a.csv": "이름,점수\n민수,90\n" }).output).toBe("['이름,점수\n', '민수,90\n']\n");
+    expect(run(`with open("a.csv", encoding="${encoding}") as file:\n    print(file.readlines())`, { "a.csv": "이름,점수\n민수,90\n" }).output).toBe("['이름,점수\\n', '민수,90\\n']\n");
   });
   it("저장된 원본 인코딩과 다른 인코딩 선택은 정확한 줄의 ValueError가 된다", () => {
     const direct = run('\nopen("a.csv", encoding="utf-8")', { "a.csv": CSV_TEXT }, { fileEncodings: new Map([["a.csv", "euc-kr"]]) });

@@ -1,9 +1,10 @@
 import type { Expr, FStringFormat, Name, Program, Statement, Target } from "./ast";
 import { lex } from "./lexer";
+import { pythonErrorNames } from "./python-errors";
 import { CompilerError, type Token } from "./token";
 
 const unsupported = new Set<string>();
-const errorTypes = new Set(["ImportError", "Exception", "NameError", "TypeError", "ValueError", "ZeroDivisionError", "IndexError", "KeyError", "AttributeError", "FileNotFoundError", "RuntimeError", "RecursionError", "AssertionError"]);
+const errorTypes = pythonErrorNames;
 const compounds = new Set(["+=", "-=", "*=", "/=", "//=", "%=", "**="]);
 const comparisons = new Set(["==", "!=", "<", "<=", ">", ">=", "is"]);
 
@@ -112,8 +113,7 @@ export class Parser {
     }
     if (this.cur().kind !== "identifier") return undefined;
     const firstToken = this.advance(), first: Name = { kind: "name", id: firstToken.lexeme, token: firstToken };
-    let node: Expr = first;
-    while (true) { if (this.match("[")) { node = { kind: "subscript", object: node, index: this.subscript(firstToken), token: firstToken }; continue; } if (this.match(".")) { const name = this.cur(); if (name.kind !== "identifier") this.fail(name, "속성 이름이 필요합니다."); this.advance(); node = { kind: "attribute", object: node, name: name.lexeme, token: name }; continue; } break; }
+    const node = this.postfix(first);
     return node.kind === "name" || node.kind === "subscript" || node.kind === "attribute" ? node : undefined;
   }
   private classStmt(): Statement { const token = this.advance(), name = this.cur(); if (name.kind !== "identifier") this.fail(name, "클래스 이름이 필요합니다."); this.advance(); let parent: Expr | undefined; if (this.match("(")) { if (!this.match(")")) { parent = this.expression(); if (this.match(",") && this.cur().lexeme !== ")") this.fail(this.cur(), "부모 클래스는 하나만 지정할 수 있습니다.", "unsupported"); if (!this.match(")")) this.fail(this.cur(), "닫는 괄호가 필요합니다."); } } const body = this.suite(token); for (const statement of body) if (!(["assign", "function", "pass"] as string[]).includes(statement.kind)) this.fail((statement as { token: Token }).token, "클래스 본문에는 속성 대입, 메서드 정의, pass만 사용할 수 있습니다."); return { kind: "class", name: name.lexeme, parent, body, token }; }
@@ -141,14 +141,31 @@ export class Parser {
     if (!this.match("(")) this.fail(this.cur(), "함수 이름 뒤에는 '('가 필요합니다.");
     const params = this.parameters(")"); this.functionDepth++; const body = this.suite(token); this.functionDepth--;
     const seen = new Set(params.map(p => p.name)), globals: string[] = [], nonlocals: string[] = [];
+    const rememberExpression = (value: unknown): void => {
+      if (!value || typeof value !== "object") return;
+      if (Array.isArray(value)) { value.forEach(rememberExpression); return; }
+      const node = value as Record<string, unknown>;
+      if (node.kind === "name") { seen.add(node.id as string); return; }
+      if (node.kind === "lambda") { (value as Extract<Expr, {kind: "lambda"}>).params.forEach(p => rememberExpression(p.defaultValue)); return; }
+      if (typeof node.kind === "string" && node.kind.endsWith("-comprehension")) {
+        rememberExpression((value as Extract<Expr, {kind: "list-comprehension"}>).clauses[0].iterable); return;
+      }
+      for (const [key, child] of Object.entries(node)) if (key !== "token") rememberExpression(child);
+    };
     const remember = (target: Target): void => { if (target.kind === "name") seen.add(target.id); else if (target.kind === "unpack") target.values.forEach(remember); else if (target.kind === "star-target") remember(target.target); };
     const visit = (nodes: Statement[]): void => nodes.forEach(statement => {
+      for (const [key, value] of Object.entries(statement)) {
+        if (!["token", "body", "otherwise", "finalbody", "handlers", "branches", "params"].includes(key)) rememberExpression(value);
+      }
+      if (statement.kind === "function") { statement.params.forEach(p => rememberExpression(p.defaultValue)); seen.add(statement.name); }
+      if (statement.kind === "class") seen.add(statement.name);
+      if (statement.kind === "import") seen.add(statement.binding);
       if (statement.kind === "global" || statement.kind === "nonlocal") {
         for (const id of statement.names) { if (seen.has(id)) this.fail(statement.token, "지역 변수로 사용한 이름은 global/nonlocal로 선언할 수 없습니다."); const own = statement.kind === "global" ? globals : nonlocals, other = statement.kind === "global" ? nonlocals : globals; if (other.includes(id)) this.fail(statement.token, "global과 nonlocal을 함께 선언할 수 없습니다."); if (!own.includes(id)) own.push(id); }
       } else if (statement.kind === "assign") statement.targets.forEach(remember);
       else if (statement.kind === "augassign" || statement.kind === "delete") remember(statement.target);
       else if (statement.kind === "for" || statement.kind === "while") { if (statement.kind === "for") remember(statement.target); visit(statement.body); if (statement.otherwise) visit(statement.otherwise); }
-      else if (statement.kind === "if") { statement.branches.forEach(branch => visit(branch.body)); if (statement.otherwise) visit(statement.otherwise); }
+      else if (statement.kind === "if") { statement.branches.forEach(branch => { rememberExpression(branch.condition); visit(branch.body); }); if (statement.otherwise) visit(statement.otherwise); }
       else if (statement.kind === "try") { visit(statement.body); statement.handlers.forEach(handler => visit(handler.body)); if (statement.otherwise) visit(statement.otherwise); if (statement.finalbody) visit(statement.finalbody); }
       else if (statement.kind === "with") visit(statement.body);
     });

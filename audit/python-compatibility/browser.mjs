@@ -1,0 +1,39 @@
+import assert from 'node:assert/strict';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { chromium } from 'playwright-core';
+import { cases, duplicateAliases } from './cases/index.mjs';
+import { createLearningRunner } from './run-learning-vm.mjs';
+const url=process.env.AUDIT_URL??'http://127.0.0.1:4175/', directory='artifacts/python-compatibility-browser';
+await mkdir(directory,{recursive:true});
+const ids=['numeric-boundary-9007199254740991','numeric-boundary-9007199254740993','numeric-operation-29','numeric-operation-34','numeric-operation-54','evaluation-binary','evaluation-keywords','evaluation-dict','evaluation-keyword-before-star','evaluation-augmented','control-for-empty','control-for-break','control-continue-finally','function-recursive','function-recursive-input','function-local-before-assignment','exception-as-continue','exception-finally-replace','collection-set-union','collection-dict-nan-key','collection-list-sort-stable','assignment-aug-list-ref','class-super-init','class-isinstance','class-str-invalid','module-alias','module-error','math-sqrt-0','math-factorial-1','file-output-input','file-output-exception-write','file-output-write','file-output-f-center','file-output-f-precision','builtin-map-consume','builtin-any-lazy','safety-turtle-normal'];
+const selected=ids.map(originalId=>{const id=duplicateAliases[originalId]??originalId,c=cases.find(c=>c.id===id);if(!c)throw Error(id);return c;});
+const runner=await createLearningRunner(), browser=await chromium.launch({executablePath:join(process.env['PROGRAMFILES(X86)'],'Microsoft/Edge/Application/msedge.exe'),headless:true}), results=[], errors=[], safeguards=[];
+async function edit(page,source){await page.locator('.editor-host .cm-content').click();await page.keyboard.press('Control+A');await page.keyboard.press('Backspace');await page.keyboard.insertText(source);if(source.split('\n').length<80){assert.equal((await page.locator('.editor-host .cm-line').allTextContents()).join('\n'),source);}else{await page.keyboard.press('Control+Home');assert.equal(await page.locator('.editor-host .cm-line').first().textContent(),source.split('\n')[0]);await page.keyboard.press('Control+End');assert.equal(await page.locator('.editor-host .cm-line').last().textContent(),source.split('\n').at(-1));await page.keyboard.press('Control+Home');}}
+async function execute(page,source,answers=[]){await edit(page,source);await page.locator('.run').click();const prompts=[];for(const answer of answers){await page.locator('.console-input').waitFor();prompts.push(await page.locator('.input-prompt').textContent());await page.locator('.console-input').fill(answer);await page.locator('.input-submit').click();}await page.waitForFunction(()=>document.querySelector('.stop').disabled,{},{timeout:20000});return{stdout:(await page.locator('.console > .console-line').allTextContents()).join(''),error:(await page.locator('.console-error').allTextContents()).join(''),prompts,highlight:await page.locator('.cm-student-error').count()};}
+try {
+ for(const [width,height] of [[1440,900],[360,800]]){
+  const context=await browser.newContext({viewport:{width,height}}),page=await context.newPage();page.on('dialog',d=>d.accept());page.on('pageerror',e=>errors.push({viewport:width,error:e.message}));
+  assert.equal((await page.goto(url)).status(),200);await page.locator('.editor-host .cm-content').waitFor();if(await page.locator('.welcome-dialog').isVisible())await page.locator('.welcome-close').click();assert.equal(await page.locator('.app-version').textContent(),'2.0.0');
+  for(const c of selected){
+   // Fixtures are authored by this audit, saved through ordinary Python VFS writes.
+   if(c.files.length){const setup=c.files.map(f=>`with open(${JSON.stringify(f.name)}, "w") as fixture:\n    fixture.write(${JSON.stringify(f.content)})`).join('\n');await execute(page,setup);}
+   const expected=runner.run(c),actual=await execute(page,c.code,c.input);let cleanOutput=actual.stdout;for(let i=0;i<actual.prompts.length;i++)cleanOutput=cleanOutput.replace(actual.prompts[i]+c.input[i]+'\n',actual.prompts[i]);
+   const outputMatch=cleanOutput===expected.stdout,errorMatch=expected.errorType?actual.error.includes(expected.message)&&actual.error.includes(`${expected.line}번째 줄`):actual.error==='';
+   const graphics=c.id==='safety-turtle-normal'?await page.locator('.turtle-canvas').isVisible():null;
+   results.push({id:c.id,viewport:`${width}x${height}`,actual,normalizedStdout:cleanOutput,vmStdout:expected.stdout,outputMatch,errorMatch,graphics,meaning:'UI/Worker versus measured learning VM, not CPython equality'});
+  }
+  const limited=await execute(page,'try:\n    print("x"*100000)\nexcept:\n    print("caught")');assert.ok(limited.error.includes('출력'));assert.ok(!limited.stdout.includes('caught'));assert.equal((await execute(page,'print("다시 실행")')).stdout,'다시 실행\n');
+  const commandLimited=await execute(page,'try:\n    while True:\n        pass\nexcept:\n    print("caught")');assert.ok(commandLimited.error);assert.ok(!commandLimited.stdout.includes('caught'));assert.equal((await execute(page,'print("다시 실행")')).stdout,'다시 실행\n');
+  await edit(page,'name=input("대기:")\nprint(name)');await page.locator('.run').click();await page.locator('.console-input').waitFor();await page.locator('.stop').click();await page.waitForFunction(()=>document.querySelector('.stop').disabled);assert.equal((await execute(page,'print("중지 후 실행")')).stdout,'중지 후 실행\n');
+  const instructionResult=await execute(page,cases.find(c=>c.id==='safety-instructions-finite').code);assert.ok(instructionResult.error.includes('명령 실행'));assert.ok(!instructionResult.stdout.includes('caught'));assert.equal((await execute(page,'print("명령 제한 후 실행")')).stdout,'명령 제한 후 실행\n');
+  const turtleLimit=await execute(page,cases.find(c=>c.id==='safety-turtle-limit').code);assert.ok(turtleLimit.error.includes('그래픽 명령 제한'));assert.equal((await execute(page,'print("그래픽 제한 후 실행")')).stdout,'그래픽 제한 후 실행\n');
+  await edit(page,'try:\n    while True:\n        pass\nexcept:\n    print("caught")');await page.locator('.run').click();await page.locator('.stop').click();await page.waitForFunction(()=>document.querySelector('.stop').disabled);assert.equal((await execute(page,'print("CPU 중지 후 실행")')).stdout,'CPU 중지 후 실행\n');
+  await execute(page,'with open("helper.py","w") as f:\n    f.write("value=3")');if(!await page.locator('.file-panel').isVisible())await page.locator('.files-toggle').click();await page.locator('.file-item').filter({hasText:'helper.py'}).click();await edit(page,'value=999');await page.locator('.document-tabs [role="tab"]').filter({has:page.locator('.document-tab-name',{hasText:/^main.py$/})}).click();const draft=await execute(page,'import helper\nprint(helper.value)');assert.equal(draft.stdout,'3\n');
+  safeguards.push({viewport:`${width}x${height}`,outputLimit:limited.error,loopLimit:commandLimited.error,instructionLimit:instructionResult.error,turtleLimit:turtleLimit.error,stopDuringInput:true,stopDuringCPU:true,restartAfterLimits:true,unsavedModuleExcluded:draft.stdout==='3\n'});
+  await page.screenshot({path:join(directory,`audit-${width}x${height}.png`),fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth),true);
+  console.log(`Rendered ${selected.length} audit programs ${width}x${height}; limits/stop/restart checked`);await context.close();
+ }
+ await writeFile(join(directory,'results.json'),JSON.stringify({url,browser:browser.version(),representativeCases:selected.length,executions:results.length,results,errors,safeguards},null,2));
+ console.log(JSON.stringify({browser:browser.version(),cases:selected.length,executions:results.length,mismatches:results.filter(r=>!r.outputMatch||!r.errorMatch),errors},null,2));
+} finally{await runner.close();await browser.close();}

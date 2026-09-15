@@ -1,6 +1,6 @@
-import { equal, keyOK, type SetValue, type SliceValue, type Value } from "./value";
+import { elementEqual as equal, keyOK, type SetValue, type SliceValue, type Value } from "./value";
 export class CollectionError extends Error {
-  constructor(readonly pythonType: "TypeError" | "ValueError" | "KeyError" | "IndexError" | "ZeroDivisionError", message: string) { super(message); }
+  constructor(readonly pythonType: "TypeError" | "ValueError" | "KeyError" | "IndexError" | "ZeroDivisionError" | "OverflowError", message: string) { super(message); }
 }
 export class CollectionLimitError extends Error {}
 export const MAX_COLLECTION_SIZE = 10_000;

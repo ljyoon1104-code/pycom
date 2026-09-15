@@ -7,7 +7,7 @@ import { CompilerError } from "./token";
 type Loop = { breaks: number[]; continueTarget: number; cleanupDepth: number };
 
 export function compile(source: string): Bytecode { return compileProgram(parse(lex(source)).body); }
-function compileProgram(nodes: Statement[]): Bytecode {
+function compileProgram(nodes: Statement[], functionScopes: ReadonlySet<string>[] = []): Bytecode {
   const instructions: Instruction[] = [], loops: Loop[] = [], exceptionNames: string[][] = [];
   const point = (token: { line: number; column: number }) => ({ line: token.line, column: token.column });
   const emit = (instruction: Instruction) => (instructions.push(instruction), instructions.length - 1);
@@ -28,7 +28,16 @@ function compileProgram(nodes: Statement[]): Bytecode {
       }
       case "unary": expression(node.operand); emit({ op: "unary", operator: node.op, ...point(node.token) }); return;
       case "binary": expression(node.left); expression(node.right); emit({ op: "binary", operator: node.op, ...point(node.token) }); return;
-      case "compare": node.operands.forEach(expression); emit({ op: "compare", operators: node.ops, count: node.operands.length, ...point(node.token) }); return;
+      case "compare": {
+        expression(node.operands[0]);
+        const exits: number[] = [];
+        node.ops.forEach((operator, index) => {
+          expression(node.operands[index + 1]);
+          if (index < node.ops.length - 1) exits.push(emit({ op: "compare_step", operator, target: -1, ...point(node.token) }));
+          else emit({ op: "compare", operators: [operator], count: 2, ...point(node.token) });
+        });
+        exits.forEach(index => patch(index, instructions.length)); return;
+      }
       case "logical": {
         expression(node.left);
         const jump = emit({ op: node.op === "and" ? "jump_if_false_keep" : "jump_if_true_keep", target: -1, ...point(node.token) });
@@ -72,8 +81,19 @@ function compileProgram(nodes: Statement[]): Bytecode {
     }
   };
   const makeFunction = (node: Extract<Statement, { kind: "function" }>): void => {
+    const validateNonlocals = (body: Statement[]): void => body.forEach(statement => {
+      if (statement.kind === "nonlocal") for (const name of statement.names) {
+        if (!functionScopes.some(scope => scope.has(name))) throw new CompilerError({ ...point(statement.token), category: "syntax", message: `'${name}' 이름의 바깥 함수 변수가 없습니다.` });
+      }
+      if (statement.kind === "for" || statement.kind === "while" || statement.kind === "with") validateNonlocals(statement.body);
+      if (statement.kind === "if") statement.branches.forEach(branch => validateNonlocals(branch.body));
+      if ("otherwise" in statement && statement.otherwise) validateNonlocals(statement.otherwise);
+      if (statement.kind === "try") { validateNonlocals(statement.body); statement.handlers.forEach(handler => validateNonlocals(handler.body)); if (statement.finalbody) validateNonlocals(statement.finalbody); }
+    });
+    validateNonlocals(node.body);
+    const names = localNames(node.body, node.params.map(parameter => parameter.name), [...node.globals, ...(node.nonlocals ?? [])]);
     const defaults = node.params.filter(parameter => parameter.defaultValue); defaults.forEach(parameter => expression(parameter.defaultValue!));
-    const bytecode = compileProgram(node.body); bytecode.instructions.push({ op: "constant", value: null, ...point(node.token) }, { op: "return_value", ...point(node.token) });
+    const bytecode = compileProgram(node.body, [new Set(names), ...functionScopes]); bytecode.instructions.push({ op: "constant", value: null, ...point(node.token) }, { op: "return_value", ...point(node.token) });
     emit({ op: "make_function", name: node.name, params: node.params.map(parameter => ({ name: parameter.name, kind: parameter.kind, hasDefault: !!parameter.defaultValue })), localNames: localNames(node.body, node.params.map(parameter => parameter.name), [...node.globals, ...(node.nonlocals ?? [])]), globals: node.globals, nonlocals: node.nonlocals, bytecode, ...point(node.token) });
   };
   const prepareTarget = (target: Target) => { if (target.kind === "subscript") { expression(target.object); expression(target.index); } else if (target.kind === "attribute") expression(target.object); };
@@ -110,7 +130,7 @@ function compileProgram(nodes: Statement[]): Bytecode {
   const body = (statements: Statement[]) => statements.forEach(statement);
   const statement = (node: Statement): void => {
     if (node.kind === "import") { emit({ op: "import_module", module: node.module, member: node.member, ...point(node.token) }); emit({ op: "store", name: node.binding, ...point(node.token) }); return; }
-    if (node.kind === "class") { const bytecode = compileProgram(node.body); if (node.parent) expression(node.parent); emit({ op: "make_class", name: node.name, bytecode, hasParent: !!node.parent, ...point(node.token) }); emit({ op: "store", name: node.name, ...point(node.token) }); return; }
+    if (node.kind === "class") { const bytecode = compileProgram(node.body, functionScopes); if (node.parent) expression(node.parent); emit({ op: "make_class", name: node.name, bytecode, hasParent: !!node.parent, ...point(node.token) }); emit({ op: "store", name: node.name, ...point(node.token) }); return; }
     if (node.kind === "with") { expression(node.value); const setup = emit({ op: "enter_with", name: node.name, end: -1, ...point(node.token) }); body(node.body); emit({ op: "exit_with", ...point(node.token) }); (instructions[setup] as Extract<Instruction, { op: "enter_with" }>).end = instructions.length; return; }
     if (node.kind === "raise") { if (node.value) expression(node.value); emit({ op: "raise", hasValue: !!node.value, ...point(node.token) }); return; }
     if (node.kind === "delete") {
@@ -159,9 +179,9 @@ function compileProgram(nodes: Statement[]): Bytecode {
       return;
     }
     if (node.kind === "augassign") {
-      if (node.target.kind === "name") { expression(node.target); expression(node.value); emit({ op: "binary", operator: node.op, ...point(node.token) }); emit({ op: "store", name: node.target.id, ...point(node.token) }); }
-      else if(node.target.kind==="subscript") { expression(node.target.object); expression(node.target.index); emit({ op: "dup_two", ...point(node.token) }); emit({ op: "load_subscript", ...point(node.token) }); expression(node.value); emit({ op: "binary", operator: node.op, ...point(node.token) }); emit({ op: "store_subscript", ...point(node.token) }); }
-      else { expression(node.target.object); emit({op:"dup",...point(node.token)}); emit({op:"load_attr",name:node.target.name,...point(node.token)}); expression(node.value); emit({op:"binary",operator:node.op,...point(node.token)}); emit({op:"store_attr",name:node.target.name,...point(node.token)}); }
+      if (node.target.kind === "name") { expression(node.target); expression(node.value); emit({ op: "binary", inplace: true, operator: node.op, ...point(node.token) }); emit({ op: "store", name: node.target.id, ...point(node.token) }); }
+      else if(node.target.kind==="subscript") { expression(node.target.object); expression(node.target.index); emit({ op: "dup_two", ...point(node.token) }); emit({ op: "load_subscript", ...point(node.token) }); expression(node.value); emit({ op: "binary", inplace: true, operator: node.op, ...point(node.token) }); emit({ op: "store_subscript", ...point(node.token) }); }
+      else { expression(node.target.object); emit({op:"dup",...point(node.token)}); emit({op:"load_attr",name:node.target.name,...point(node.token)}); expression(node.value); emit({op:"binary",inplace:true,operator:node.op,...point(node.token)}); emit({op:"store_attr",name:node.target.name,...point(node.token)}); }
       return;
     }
     if (node.kind === "expression") { expression(node.expression); emit({ op: "pop", ...point(node.token) }); return; }

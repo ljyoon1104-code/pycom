@@ -1,8 +1,8 @@
 import { CollectionError } from "./collections-v2";
 import type { Value } from "./value";
-import { float, isFloat, numeric, numberValue } from "./numbers-v2";
+import { float, isFloat, numeric, numberValue, floatDivmod } from "./numbers-v2";
 export const SCALAR_BUILTINS = new Set(["abs", "round", "pow", "divmod", "chr", "ord", "bin", "oct", "hex"]);
-const fail = (type: "TypeError" | "ValueError" | "ZeroDivisionError", message: string): never => { throw new CollectionError(type, message); };
+const fail = (type: "TypeError" | "ValueError" | "ZeroDivisionError" | "OverflowError", message: string): never => { throw new CollectionError(type, message); };
 const number = (value: Value): number => numeric(value) ? numberValue(value) : fail("TypeError", "숫자가 필요합니다.");
 const integer = (value: Value): number => { const result = number(value); if (isFloat(value) || !Number.isSafeInteger(result)) return fail("TypeError", "안전한 범위의 정수가 필요합니다."); return result; };
 const even = (value: number): number => { const lower = Math.floor(value), part = value - lower; return part < .5 ? lower : part > .5 ? lower + 1 : lower % 2 === 0 ? lower : lower + 1; };
@@ -24,8 +24,8 @@ function scalarRaw(name: string, args: Value[], keywords: Record<string, Value>)
   if (name === "ord") { if (typeof values[0] !== "string" || [...values[0]].length !== 1) return fail("TypeError", "ord()에는 한 글자 문자열이 필요합니다."); return values[0].codePointAt(0)!; }
   if (name === "chr") { const value = integer(values[0]); if (value < 0 || value > 0x10ffff) return fail("ValueError", "Unicode 문자 범위를 벗어났습니다."); return String.fromCodePoint(value); }
   if (["bin", "oct", "hex"].includes(name)) { const value = integer(values[0]), radix = name === "bin" ? 2 : name === "oct" ? 8 : 16; return (value < 0 ? "-" : "") + (name === "bin" ? "0b" : name === "oct" ? "0o" : "0x") + Math.abs(value).toString(radix); }
-  if (name === "round") { const value = number(values[0]), digits = values[1] === undefined || values[1] === null ? undefined : integer(values[1]); if (!Number.isFinite(value)) { if (digits !== undefined) return value; return fail("ValueError", "무한대 또는 NaN을 정수로 반올림할 수 없습니다."); } if (digits === undefined) return even(value); if (digits > 323) return value; if (digits < -308) return value < 0 ? -0 : 0; return decimalRound(value, digits); }
-  if (name === "divmod") { const a = number(values[0]), b = number(values[1]); if (b === 0) return fail("ZeroDivisionError", "0으로 나눌 수 없습니다."); const quotient = Math.floor(a / b); return { kind: "tuple", items: [quotient, a - quotient * b] }; }
+  if (name === "round") { const value = number(values[0]), digits = values[1] === undefined || values[1] === null ? undefined : integer(values[1]); if (!Number.isFinite(value)) { if (digits !== undefined) return value; return fail(Number.isNaN(value) ? "ValueError" : "OverflowError", "무한대 또는 NaN을 정수로 반올림할 수 없습니다."); } if (digits === undefined) return even(value); if (digits > 323) return value; if (digits < -308) return value < 0 ? -0 : 0; return decimalRound(value, digits); }
+  if (name === "divmod") { const a = number(values[0]), b = number(values[1]); if (b === 0) return fail("ZeroDivisionError", "0으로 나눌 수 없습니다."); const pair = values.some(isFloat) ? floatDivmod(a, b) : [Math.floor(a / b), a - Math.floor(a / b) * b]; return { kind: "tuple", items: pair }; }
   if (name === "pow") {
     if (values[2] !== undefined && values[2] !== null) {
       const a = BigInt(integer(values[0])), b = BigInt(integer(values[1])), mod = BigInt(integer(values[2])); if (!mod) return fail("ValueError", "pow()의 나머지 기준은 0이 될 수 없습니다.");

@@ -80,7 +80,7 @@ try {
   await page.getByRole("button", { name: "필터 초기화", exact: true }).click();
   await page.locator("#textbook-topic").selectOption("반복문"); assert.ok(await page.locator(".textbook-card").count() > 0);
   await page.locator("#textbook-search").fill("no-matching-example-123"); assert.equal(await page.locator(".textbook-card").count(), 0);
-  await page.getByRole("button", { name: "필터 초기화", exact: true }).click(); assert.equal(await page.locator(".textbook-card").count(), 56); record("topic filter / empty results / reset");
+  await page.getByRole("button", { name: "필터 초기화", exact: true }).click(); assert.equal(await page.locator(".textbook-card").count(), 65); record("topic filter / empty results / reset (56 textbook + 9 Core examples)");
   await page.locator("#textbook-status").selectOption("corrected"); assert.equal(await page.locator(".textbook-card").count(), 6); await page.getByRole("button", { name: "필터 초기화", exact: true }).click();
   await page.evaluate(() => { location.hash = "#/examples/unknown-example"; }); await page.getByText("예제를 찾을 수 없습니다.", { exact: true }).waitFor(); await page.locator(".textbook-detail").getByRole("button", { name: "목록으로", exact: true }).click(); record("status filter and unknown direct link recovery");
   await page.locator('[data-example-id="page-122-greeting"]').click();

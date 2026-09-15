@@ -1,5 +1,5 @@
 import { CollectionError, CollectionLimitError, MAX_COLLECTION_SIZE, hashable } from "./collections-v2";
-import { equal, isDict, isTuple, type DictValue, type ListValue, type Value } from "./value";
+import { elementEqual as equal, isDict, isTuple, type DictValue, type ListValue, type Value } from "./value";
 const error = (message: string, type: "TypeError" | "ValueError" | "KeyError" = "TypeError"): never => { throw new CollectionError(type, message); };
 const count = (name: string, args: Value[], min: number, max = min) => { if (args.length < min || args.length > max) error(`${name}() 인수 개수가 올바르지 않습니다.`); };
 const integer = (value: Value): number => typeof value === "boolean" ? Number(value) : typeof value === "number" && Number.isSafeInteger(value) ? value : error("정수가 필요합니다.");
