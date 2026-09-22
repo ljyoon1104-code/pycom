@@ -14,7 +14,8 @@
     "verify:stage15": "node scripts/verify-stage15.mjs",
     "verify:examples": "node scripts/verify-examples.mjs",
     "verify:tabs": "node scripts/verify-document-tabs.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:audit": "node --test --test-concurrency=1 audit/python-compatibility/*.test.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.6",

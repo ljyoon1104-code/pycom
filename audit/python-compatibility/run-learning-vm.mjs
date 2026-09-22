@@ -1,10 +1,10 @@
 import { createServer } from 'vite';
-export async function createLearningRunner() {
-  const server = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+export async function createLearningRunner({ root = process.cwd() } = {}) {
+  const server = await createServer({ root, configFile: false, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   const { compile } = await server.ssrLoadModule('/src/compiler/compiler.ts'), { VM } = await server.ssrLoadModule('/src/runtime/vm.ts');
   function run(c) {
     const events = [], files = new Map((c.files ?? []).map(f => [f.name, f.content])); let vm, error, compileSuccess = true;
-    try { vm = new VM(compile(c.code), e => events.push(e), files, { fileName: 'main.py', fileEncodings: new Map((c.files ?? []).map(f => [f.name, f.encoding ?? 'utf-8'])), ...(c.fixedClock ? { clock: () => new Date(c.fixedClock) } : {}) }); vm.execute();
+    try { vm = new VM(compile(c.code), e => events.push(e), files, { fileName: 'main.py', fileEncodings: new Map((c.files ?? []).map(f => [f.name, f.encoding ?? 'utf-8'])), ...(c.fixedClock ? { clock: () => new Date(c.fixedClock) } : c.oracleDate ? { clock: () => { const [y,m,d] = c.oracleDate.split('-').map(Number); return new Date(y,m-1,d,12); } } : {}) }); vm.execute();
       let used = 0; while (events.at(-1)?.type === 'input' && used < (c.input ?? []).length) vm.resume(c.input[used++]);
     } catch (e) { compileSuccess = false; error = e.detail ?? { category: 'internal', message: String(e), line: null, column: null }; }
     const last = events.at(-1); error ??= last?.type === 'error' ? last.error : undefined;
