@@ -12,7 +12,7 @@ import { DocumentTabs } from "./editor/document-tabs";
 import { isDirty } from "./editor/documents";
 import { BACKUP_FORMAT_VERSION, BackupValidationError, backupDownloadName, buildRestoreSet, createWorkspaceBackup, MAX_BACKUP_JSON_BYTES, parseWorkspaceBackup, restorePreview, serializeWorkspaceBackup, type ConflictPolicy, type WorkspaceBackup } from "./files/backup";
 import { decodeImportedBytes, FileDecodingError, type ImportEncodingChoice } from "./files/encoding";
-import { appFile, checkedPut, IndexedDbFileStore, normalizeName, validFileName, type AppFile } from "./files/storage";
+import { appFile, checkedPut, IndexedDbFileStore, normalizeName, type AppFile } from "./files/storage";
 import { setupPwa } from "./pwa/register";
 import { TurtleCanvasRenderer } from "./graphics/turtle-canvas";
 import type { FromWorker, ToWorker } from "./runtime/protocol";

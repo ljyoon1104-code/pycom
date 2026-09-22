@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { CACHE_PREFIX, connectionText, isIosBrowser, MANIFEST, shouldConfirmUpdate, shouldShowInstall } from "./config";
+import { connectionText, isIosBrowser, MANIFEST, shouldConfirmUpdate, shouldShowInstall } from "./config";
 import { serviceWorkerUrl } from "./register";
 import { buildServiceWorker, shellFiles } from "./service-worker";
 

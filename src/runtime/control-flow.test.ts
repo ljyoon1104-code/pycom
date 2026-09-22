@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { compile } from "../compiler/compiler";
 import { CompilerError } from "../compiler/token";
-import { VM, type VMEvent } from "./vm";
+import type { VMEvent } from "./vm";
+import { execute } from "./test-helpers";
 
-function execute(code: string): { events: VMEvent[]; vm: VM } { const events: VMEvent[] = []; const vm = new VM(compile(code), event => events.push(event)); vm.execute(); return { events, vm }; }
 const text = (events: VMEvent[]) => events.filter((event): event is Extract<VMEvent, { type: "output" }> => event.type === "output").map(event => event.text).join("");
 describe("2단계 제어 흐름", () => {
   it("비교 연산과 연속 비교를 처리한다", () => { expect(text(execute('print(1 == 1, 1 != 2, 1 < 2, 2 <= 2, 3 > 2, 3 >= 3)\nprint(0 <= 50 <= 100)').events)).toBe("True True True True True True\nTrue\n"); });

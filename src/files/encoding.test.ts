@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compile } from "../compiler/compiler";
 import { VM, type VMEvent, type VMOptions } from "../runtime/vm";
-import { decodeImportedBytes, FileDecodingError, normalizeEncoding } from "./encoding";
+import { decodeImportedBytes, normalizeEncoding } from "./encoding";
 import { appFile, MemoryFileStore, migrateFile } from "./storage";
 
 // Directly authored fixture encoded with Windows code page 949/EUC-KR.

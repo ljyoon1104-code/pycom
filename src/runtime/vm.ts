@@ -4,7 +4,7 @@ import { CompilerError } from "../compiler/token";
 import { exceptionMatches, pythonErrorNames } from "../compiler/python-errors";
 import { elementEqual, isSuper, isErrorType, classAttribute, subclass } from "./value";
 import { SCALAR_BUILTINS, scalarBuiltin } from "./builtins-v2";
-import { STRING_METHODS, LIST_METHODS, DICT_METHODS, stringMethod, listMethod, dictMethod } from "./methods-v2";
+import { STRING_METHODS, LIST_METHODS, stringMethod, listMethod, dictMethod } from "./methods-v2";
 import { isSet, type LexicalScope } from "./value";
 import { CollectionError, CollectionLimitError, MAX_COLLECTION_SIZE, hashable, makeSet, setBinary, setMethod, sliceIndices } from "./collections-v2";
 import type { StudentError } from "../compiler/token";

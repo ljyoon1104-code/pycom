@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { compile } from "../compiler/compiler";
 import { lex } from "../compiler/lexer";
 import { CompilerError } from "../compiler/token";
-import { VM, type VMEvent } from "./vm";
+import type { VMEvent } from "./vm";
+import { execute } from "./test-helpers";
 
-function execute(code: string): { events: VMEvent[]; vm: VM } { const events: VMEvent[] = []; const vm = new VM(compile(code), event => events.push(event)); vm.execute(); return { events, vm }; }
 const output = (events: VMEvent[]) => events.filter((event): event is Extract<VMEvent, { type: "output" }> => event.type === "output").map(event => event.text).join("");
 describe("1단계 Python 실행기", () => {
   it("숫자와 이스케이프 문자열을 토큰화한다", () => { const tokens = lex('12 3.5 "a\\n\\t\\\\"'); expect(tokens.filter(token => token.kind !== "eof").map(token => token.value)).toEqual([12, 3.5, "a\n\t\\"]); });
