@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compile } from "../compiler/compiler";
 import { VM, type VMEvent } from "./vm";
-const run = (source: string) => { const events: VMEvent[] = []; new VM(compile(source), event => events.push(event)).execute(); return events; };
+import { runEvents as run } from "./test-helpers";
 const prints = (source: string, expected: string) => { const events = run(source); expect(events.at(-1)).toEqual({ type: "complete" }); expect(events.filter(e => e.type === "output").map(e => e.text).join("")).toBe(expected + "\n"); };
 describe("Core v2 내장 함수", () => {
   it("dict 생성자는 독립된 항목과 얕은 값 공유", () => prints('a = {"x": []}\nb = dict(a, y=2)\nb["x"].append(1)\nb["x"] = 3\nprint(a, b)', "{'x': [1]} {'x': 3, 'y': 2}"));

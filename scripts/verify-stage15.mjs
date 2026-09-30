@@ -1,3 +1,4 @@
+import { editorText, replaceCode } from "./helpers/editor.mjs";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -23,12 +24,6 @@ const documents = [
 if (!existsSync(edge)) throw new Error("Microsoft Edge를 찾을 수 없습니다. EDGE_PATH를 지정해 주세요.");
 await mkdir(outputDirectory, { recursive: true });
 
-const normalize = value => value.replace(/\r\n/g, "\n").trimEnd();
-async function editorText(page) { return normalize((await page.locator(".cm-line").allTextContents()).join("\n")); }
-async function replaceCode(page, code) {
-  const editor = page.locator(".cm-content"); await editor.click(); await page.keyboard.press("Control+A"); await page.keyboard.press("Backspace"); await page.keyboard.insertText(code);
-  assert.equal(await editorText(page), normalize(code));
-}
 async function dismissWelcome(page) { if (await page.locator(".welcome-dialog").isVisible()) await page.locator(".welcome-close").click(); }
 async function saveCurrent(page) { await page.locator(".save").click(); if (await page.locator(".document-dialog-layer .name-input").isVisible()) await page.locator(".name-confirm").click(); await page.waitForFunction(() => !document.querySelector(".modified")?.textContent?.includes("*")); }
 async function saveAs(page, name) {

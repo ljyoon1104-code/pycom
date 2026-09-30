@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compile } from "../compiler/compiler";
-import { VM, type VMEvent } from "./vm";
-const run = (source: string) => { const events: VMEvent[] = []; new VM(compile(source), event => events.push(event)).execute(); return events; };
+import { runEvents as run } from "./test-helpers";
 const prints = (source: string, expected: string) => { const events = run(source); expect(events.at(-1)).toEqual({ type: "complete" }); expect(events.filter(e => e.type === "output").map(e => e.text).join("")).toBe(expected + "\n"); };
 describe("Core v2 단일 상속", () => {
   it("부모 클래스 속성과 자식 가리기", () => prints('class A:\n    x = 1\nclass B(A):\n    pass\nb = B()\nprint(B.x, b.x)\nB.x = 2\nprint(A.x, b.x)', '1 1\n1 2'));

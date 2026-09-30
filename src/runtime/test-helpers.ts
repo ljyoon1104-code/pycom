@@ -7,3 +7,7 @@ export function execute(code: string): { events: VMEvent[]; vm: VM } {
   vm.execute();
   return { events, vm };
 }
+
+export function runEvents(code: string): VMEvent[] {
+  return execute(code).events;
+}

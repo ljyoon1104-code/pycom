@@ -1,3 +1,4 @@
+import { editorText, replaceCode, normalizeEditorText as normalize } from "./helpers/editor.mjs";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -58,20 +59,7 @@ if (!existsSync(edge)) throw new Error("Microsoft Edge를 찾을 수 없습니�
 await mkdir(outputDirectory, { recursive: true });
 
 const overlap = (one, two) => one.x < two.x + two.width && one.x + one.width > two.x && one.y < two.y + two.height && one.y + one.height > two.y;
-const normalize = value => value.replace(/\r\n/g, "\n").trimEnd();
 
-async function editorText(page) {
-  return normalize((await page.locator(".cm-line").allTextContents()).join("\n"));
-}
-
-async function replaceCode(page, code) {
-  const editor = page.locator(".cm-content");
-  await editor.click();
-  await page.keyboard.press("Control+A");
-  await page.keyboard.press("Backspace");
-  await page.keyboard.insertText(code);
-  assert.equal(await editorText(page), normalize(code));
-}
 
 async function runCurrent(page, answers = [], graphics = false) {
   await page.locator(".run").click();
@@ -255,7 +243,7 @@ async function verifyViewport(browser, width, height, report) {
       const nameBeforeRotation = await page.locator(".current-name").innerText();
       const codeBeforeRotation = await editorText(page);
       await page.setViewportSize({ width: 800, height: 360 });
-      await page.waitForTimeout(100);
+      await page.waitForFunction(() => innerWidth === 800 && innerHeight === 360);
       rotationPreserved = nameBeforeRotation === await page.locator(".current-name").innerText() && codeBeforeRotation === await editorText(page);
       assert.equal(rotationPreserved, true, "화면 회전 뒤 편집 상태가 유지되지 않았습니다.");
       await page.setViewportSize({ width, height });

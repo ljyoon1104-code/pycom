@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compile } from "../compiler/compiler";
-import { VM, type VMEvent } from "./vm";
-const run = (source: string) => { const events: VMEvent[] = []; new VM(compile(source), event => events.push(event)).execute(); return events; };
+import { runEvents as run } from "./test-helpers";
 const prints = (source: string, expected: string) => { const events = run(source); expect(events.at(-1)).toEqual({ type: "complete" }); expect(events.filter(e => e.type === "output").map(e => e.text).join("")).toBe(expected + "\n"); };
 describe("Core v2 실수 표기", () => {
   it("대표 실수 출력", () => prints('print(1.0)\nprint(-0.0)\nprint(0.1 + 0.2)\nprint(float("inf"))\nprint(float("-inf"))\nprint(float("nan"))', '1.0\n-0.0\n0.30000000000000004\ninf\n-inf\nnan'));
