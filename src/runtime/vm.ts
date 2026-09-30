@@ -1,3 +1,5 @@
+import type { Frame, Region, Transfer } from "./frames";
+import { ResumeExecution, VMFailure } from "./signals";
 import type { Bytecode, Instruction, UnpackPattern } from "../compiler/opcode";
 import { compile } from "../compiler/compiler";
 import { CompilerError } from "../compiler/token";
@@ -19,16 +21,6 @@ export const MAX_CALL_DEPTH = 128;
 const MAX_INSTRUCTIONS = 1_000_000;
 const BUILTINS = new Set(["int", "float", "str", "bool", "len", "list", "tuple", "dict", "set", "sum", "min", "max", "map", "input", "print", "range", "type", "open", "sorted", "enumerate", "zip", "reversed", "any", "all"]);
 const ERROR_TYPES = pythonErrorNames;
-type Frame = { bytecode: Bytecode; pc: number; stack: Value[]; env: Map<string, Value>; outerEnvs: LexicalScope[]; localNames: Set<string>; globalNames: Set<string>; nonlocalNames: Set<string>; globalsEnv: Map<string, Value>; functionName?: string; classValue?: ClassValue; currentFunction?: FunctionValue; fileName?: string; moduleLoad?: { name: string; member?: string; instruction: Instruction } };
-type Transfer = { kind: "jump"; target: number } | { kind: "return"; value: Value } | { kind: "throw"; failure: VMFailure };
-type RegionBase = { depth: number; start: number; end: number; stackHeight: number };
-type Region = RegionBase & (
-  { kind: "except"; handlers: { type?: string; name?: string; target: number; end: number }[] }
-  | { kind: "handler"; failure: VMFailure; binding?: { env: Map<string, Value>; name: string } }
-  | { kind: "finally"; target: number; finish: number }
-  | { kind: "finalizing"; pending: Transfer }
-  | { kind: "with"; file: FileValue }
-);
 export class VM {
   private pc = 0; private stack: Value[] = []; private globals = new Map<string, Value>([["__name__", "__main__"]]); private env = this.globals;
   private outerEnvs: LexicalScope[] = []; private localNames = new Set<string>(); private globalNames = new Set<string>(); private nonlocalNames = new Set<string>();
@@ -495,6 +487,4 @@ export class VM {
     if (name === "str") { this.stack.push(this.stringValue(i,value)); return; } if (name === "bool") { this.stack.push(truthy(value)); return; } if (name === "type") { this.stack.push(`<class '${typeName(value)}'>`); return; } this.fail(i, "name", `'${name}' 함수가 정의되지 않았습니다.`);
   }
 }
-class ResumeExecution {}
-class VMFailure { constructor(readonly error: StudentError, readonly type: string, readonly catchable = true) { error.pythonType = type; } }
 import { floatDivmod, float, isFloat, numeric, numberValue } from "./numbers-v2";
