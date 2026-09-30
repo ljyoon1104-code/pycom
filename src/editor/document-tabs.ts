@@ -1,3 +1,4 @@
+import { cycleDialogFocus } from "../ui/dialogs";
 import { Documents, DOCUMENT_SESSION_KEY, contentOf, isDirty, type EditorDocument } from "./documents";
 import { LearningEditor } from "./editor";
 import { appFile, checkedPut, type AppFile, type FileStore } from "../files/storage";
@@ -112,9 +113,7 @@ export class DocumentTabs {
         if (event.key === "Escape") { event.preventDefault(); done(); }
         if (event.key === "Enter" && event.target === input) { event.preventDefault(); done(input!.value); }
         if (event.key === "Tab") {
-          const elements = Array.from(section.querySelectorAll<HTMLElement>("button,input")); const first = elements[0], last = elements.at(-1)!;
-          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+          cycleDialogFocus(event, Array.from(section.querySelectorAll<HTMLElement>("button,input")), document.activeElement);
         }
       };
       (input ?? actions.querySelector("button"))?.focus();
@@ -226,7 +225,7 @@ export class DocumentTabs {
     section.append(this.button("목록 닫기", exit)); this.opened.append(section); this.opened.hidden = false;
     this.opened.onkeydown = event => {
       if (event.key === "Escape") { event.preventDefault(); exit(); }
-      if (event.key === "Tab") { const buttons = section.querySelectorAll("button"), first = buttons[0], last = buttons[buttons.length - 1]; if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } }
+      if (event.key === "Tab") cycleDialogFocus(event, Array.from(section.querySelectorAll<HTMLButtonElement>("button")), document.activeElement);
     }; section.querySelector("button")?.focus();
   }
   render(): void {
