@@ -4,6 +4,7 @@ import path from "node:path";
 import http from "node:http";
 import { chromium } from "playwright-core";
 import { editorText, replaceCode, runCurrent } from "./helpers/editor.mjs";
+import { verifyCoreScenarios } from "./helpers/core-scenarios.mjs";
 
 const output = path.resolve(process.env.CLEANUP_ARTIFACTS ?? "artifacts/code-cleanup-stage2/browser");
 const currentRoot = path.resolve("dist");
@@ -28,7 +29,7 @@ const server = http.createServer((request, response) => {
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 const url = "http://127.0.0.1:" + server.address().port + "/";
-const browser = await chromium.launch({ executablePath: process.env.EDGE_PATH ?? "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", headless: true });
+const browser = await chromium.launch({ executablePath: process.env.EDGE_PATH ?? path.join(process.env["PROGRAMFILES(X86)"] ?? process.env.PROGRAMFILES ?? "", "Microsoft/Edge/Application/msedge.exe"), headless: true });
 const report = { url, browser: browser.version(), baseline: null, viewports: [], errors: [], layoutErrors: [] };
 const inputCode = 'name = input("이름: ")\nprint(f"안녕하세요, {name}")';
 const moduleCode = "from helper import add\nprint(add(3, 4))";
@@ -95,9 +96,12 @@ async function serviceWorkerReady(page) {
 }
 async function runCode(page, code, answers, workers) {
   await replaceCode(page, code); const count = workers.length;
+  const fileName = await page.locator(".current-name").textContent();
   const text = await runCurrent(page, answers);
   assert.equal(workers.length - count, 1, "one click must create exactly one Worker");
   assert.equal(await page.locator(".console-status").count(), 0);
+  assert.equal(await page.locator(".execution-owner").textContent(), "실행: " + fileName);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, "execution output must not widen the page");
   return text;
 }
 async function assertLayout(page) {
@@ -194,6 +198,16 @@ try {
       await replaceCode(page, 'input("중지 확인: ")'); await page.locator(".run").click(); await page.locator(".console-input").waitFor();
       await page.locator(".stop").click(); await page.waitForFunction(() => document.querySelector(".stop").disabled);
       assert.equal(await runCode(page, 'print("재실행")', [], workers), "재실행\n");
+      await replaceCode(page, 'print(input("탭 입력: "))'); await page.locator(".run").click(); await page.locator(".console-input").waitFor();
+      await tab(page, "other.py").click();
+      assert.equal(await page.locator(".input-owner").textContent(), "입력 대기: lesson.py");
+      assert.equal(await page.locator(".execution-owner").textContent(), "실행: lesson.py");
+      await page.locator(".console-input").fill("연결"); await page.locator(".input-submit").click();
+      await page.waitForFunction(() => document.querySelector(".stop").disabled);
+      assert.equal(await page.locator(".console").textContent(), "탭 입력: 연결\n연결\n");
+      assert.equal(await page.locator(".current-name").textContent(), "other.py");
+      await tab(page, "lesson.py").click();
+      const coreOnline = await verifyCoreScenarios(source => runCode(page, source, [], workers));
       await replaceCode(page, inputCode); await save(page);
       await page.locator(".new-file").click(); await replaceCode(page, "def add(a, b):\n    return a + b"); await saveAs(page, "helper.py");
       await tab(page, "lesson.py").click(); assert.equal(await runCode(page, moduleCode, [], workers), "7\n"); await save(page);
@@ -262,6 +276,7 @@ try {
       assert.match(await page.locator(".connection-status").textContent(), /오프라인/);
       assert.deepEqual(await page.locator(".document-tab-name").allTextContents(), savedTabs);
       assert.equal(await runCode(page, inputCode, ["민수"], workers), "이름: 민수\n안녕하세요, 민수\n");
+      const coreOffline = await verifyCoreScenarios(source => runCode(page, source, [], workers));
       assert.equal(await runCode(page, moduleCode, [], workers), "7\n");
       assert.equal(await runCode(page, 'with open("메모.txt") as file:\n    print(file.read())', [], workers), "한글 파일\n");
       assert.equal(await runCode(page, turtleCode, [], workers), ""); await canvasInk(page);
@@ -273,7 +288,7 @@ try {
       await page.reload(); await ready(page); assert.equal(await runCurrent(page), "오프라인 저장\n");
       await page.goto(url + "#/examples/page-120-accumulate"); await page.locator(".example-run").click(); await page.waitForFunction(() => !document.querySelector(".example-run").disabled);
       assert.equal(await page.locator(".example-output").textContent(), "12 42\n");
-      report.viewports.push({ viewport: name, layout, zoomLayout, initial: true, tabsUndoRedo: true, saveAs: true, closeCancel: true, input: "안녕하세요, 민수", errorLine: true, stopRestart: true, module: "7", textbook: "12 42", exampleImportNotSaved: true, files: true, turtle: true, focus: true, offline: true, backupRestoreMetadata: true, workers: workers.length });
+      report.viewports.push({ viewport: name, layout, zoomLayout, coreOnline, coreOffline, initial: true, tabsUndoRedo: true, saveAs: true, closeCancel: true, input: "안녕하세요, 민수", errorLine: true, stopRestart: true, module: "7", textbook: "12 42", exampleImportNotSaved: true, files: true, turtle: true, focus: true, offline: true, backupRestoreMetadata: true, workers: workers.length });
       console.log("PASS " + name);
     } finally { await context.close(); }
   }
