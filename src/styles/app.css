@@ -91,3 +91,11 @@
   .workspace > .panel:not(.result-panel) { min-height: 380px; }
   .tab-button, .input-submit, .file-item, .update, .install { min-height: 44px; }
 }
+
+/* Reflow below the normal 320px layout floor (for example at 200% zoom). */
+@media (max-width: 319px) {
+  body { min-width: 0; }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .document-bar { flex-wrap: wrap; }
+  .document-tabs { flex-basis: 100%; }
+}
