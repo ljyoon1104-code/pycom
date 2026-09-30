@@ -1,8 +1,7 @@
 import type { Frame, Region, Transfer } from "./frames";
 import { ResumeExecution, VMFailure } from "./signals";
 import type { Bytecode, Instruction, UnpackPattern } from "../compiler/opcode";
-import { compile } from "../compiler/compiler";
-import { CompilerError } from "../compiler/token";
+import { compileModuleSource, importedValue, readModuleSource, validateModuleImport, type UserModuleState } from "./user-modules";
 import { exceptionMatches, pythonErrorNames } from "../compiler/python-errors";
 import { elementEqual, isSuper, isErrorType, classAttribute, subclass } from "./value";
 import { SCALAR_BUILTINS, scalarBuiltin } from "./builtins-v2";
@@ -33,7 +32,7 @@ export class VM {
   private currentFunction?: FunctionValue;
   private currentFile?: string;
   private readonly savedModules = new Map<string, string>();
-  private readonly userModules = new Map<string, { value: Extract<Value, { kind: "module" }>; loading: boolean }>();
+  private readonly userModules = new Map<string, UserModuleState>();
   constructor(private bytecode: Bytecode, private readonly notify: (event: VMEvent) => void, private readonly files = new Map<string, string>(), private readonly options: VMOptions = {}) { this.modules = new BuiltinModules({ ...options, emitGraphics: command => this.graphicsCommand(command) }); this.currentFile = options.fileName; for (const [name, text] of files) if (name.endsWith(".py")) this.savedModules.set(name, text); }
   private graphicsCommand(command: TurtleGraphicsCommand): void { this.graphics.push(command); if (this.graphics.length >= GRAPHICS_BATCH || command.type === "finish") this.flushGraphics(); }
   private flushGraphics(): void { if (this.graphics.length) { this.notify({ type: "graphics", commands: this.graphics }); this.graphics = []; } }
@@ -134,15 +133,14 @@ export class VM {
   private storeName(name: string, value: Value): void { this.bindingEnv(name).set(name, value); }
   private saveFrame(extra: { functionName?: string; classValue?: ClassValue; moduleLoad?: Frame["moduleLoad"] } = {}): Frame { return { bytecode: this.bytecode, pc: this.pc, stack: this.stack, env: this.env, outerEnvs: this.outerEnvs, localNames: this.localNames, globalNames: this.globalNames, nonlocalNames: this.nonlocalNames, globalsEnv: this.globals, currentFunction: this.currentFunction, fileName: this.currentFile, ...extra }; }
   private restoreFrame(frame: Frame): void { this.bytecode = frame.bytecode; this.pc = frame.pc; this.stack = frame.stack; this.env = frame.env; this.outerEnvs = frame.outerEnvs; this.localNames = frame.localNames; this.globalNames = frame.globalNames; this.nonlocalNames = frame.nonlocalNames; this.globals = frame.globalsEnv; this.currentFunction = frame.currentFunction; this.currentFile = frame.fileName; }
-  private importedValue(i: Instruction, value: Extract<Value, { kind: "module" }>, member?: string): Value { if (member === undefined) return value; const result = value.attributes.get(member); if (result === undefined) throw new VMFailure({ line: i.line, column: i.column, category: "name", message: `'${value.name}' 모듈에 '${member}' 이름이 없습니다.` }, "ImportError"); return result; }
-  private finishModule(): void { const frame = this.frames.pop()!, load = frame.moduleLoad!, entry = this.userModules.get(load.name)!; entry.loading = false; this.restoreFrame(frame); this.stack.push(this.importedValue(load.instruction, entry.value, load.member)); }
+  private finishModule(): void { const frame = this.frames.pop()!, load = frame.moduleLoad!, entry = this.userModules.get(load.name)!; entry.loading = false; this.restoreFrame(frame); this.stack.push(importedValue(load.instruction, entry.value, load.member)); }
   private importModule(i: Extract<Instruction, { op: "import_module" }>): void {
     if (this.modules.has(i.module)) { this.stack.push(this.library(i, () => this.modules.load(i.module, i.member))); return; }
-    if (!/^[\p{L}_][\p{L}\p{N}_]*$/u.test(i.module) || i.member === "*") throw new VMFailure({ line: i.line, column: i.column, category: "name", message: "폴더·경로·와일드카드 모듈은 가져올 수 없습니다." }, "ImportError");
-    const cached = this.userModules.get(i.module); if (cached) { if (cached.loading) throw new VMFailure({ line: i.line, column: i.column, category: "name", message: `'${i.module}' 모듈의 순환 가져오기가 발생했습니다.` }, "ImportError"); this.stack.push(this.importedValue(i, cached.value, i.member)); return; }
-    const fileName = `${i.module}.py`, text = this.savedModules.get(fileName); if (text === undefined) throw new VMFailure({ line: i.line, column: i.column, category: "name", message: `'${fileName}' 저장 파일을 찾을 수 없습니다.` }, "ImportError");
+    validateModuleImport(i);
+    const cached = this.userModules.get(i.module); if (cached) { if (cached.loading) throw new VMFailure({ line: i.line, column: i.column, category: "name", message: `'${i.module}' 모듈의 순환 가져오기가 발생했습니다.` }, "ImportError"); this.stack.push(importedValue(i, cached.value, i.member)); return; }
+    const { fileName, text } = readModuleSource(i, this.savedModules);
     if (this.frames.length >= MAX_CALL_DEPTH) throw new VMFailure({ line: i.line, column: i.column, category: "runtime", message: "모듈 호출 깊이 제한을 초과했습니다." }, "RecursionError");
-    let bytecode: Bytecode; try { bytecode = compile(text); } catch (error) { if (error instanceof CompilerError) throw new VMFailure({ ...error.detail, fileName }, "SyntaxError"); throw error; }
+    const bytecode = compileModuleSource(text, fileName);
     const globals = new Map<string, Value>([["__name__", i.module]]), value: Extract<Value, { kind: "module" }> = { kind: "module", name: i.module, attributes: globals };
     this.userModules.set(i.module, { value, loading: true }); this.frames.push(this.saveFrame({ moduleLoad: { name: i.module, member: i.member, instruction: i } })); this.bytecode = bytecode; this.pc = 0; this.stack = []; this.env = globals; this.globals = globals; this.outerEnvs = []; this.localNames = new Set(); this.globalNames = new Set(); this.nonlocalNames = new Set(); this.currentFunction = undefined; this.currentFile = fileName;
   }
