@@ -1,0 +1,1955 @@
+{
+  "arithmetic": {
+    "instructions": [
+      {
+        "op": "load",
+        "name": "print",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "constant",
+        "value": 1,
+        "line": 1,
+        "column": 7
+      },
+      {
+        "op": "constant",
+        "value": 2,
+        "line": 1,
+        "column": 11
+      },
+      {
+        "op": "constant",
+        "value": 3,
+        "line": 1,
+        "column": 15
+      },
+      {
+        "op": "binary",
+        "operator": "*",
+        "line": 1,
+        "column": 13
+      },
+      {
+        "op": "binary",
+        "operator": "+",
+        "line": 1,
+        "column": 9
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 1,
+        "column": 1
+      }
+    ]
+  },
+  "comparison-chain": {
+    "instructions": [
+      {
+        "op": "load",
+        "name": "print",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "constant",
+        "value": 1,
+        "line": 1,
+        "column": 7
+      },
+      {
+        "op": "constant",
+        "value": 2,
+        "line": 1,
+        "column": 11
+      },
+      {
+        "op": "compare_step",
+        "operator": "<",
+        "target": 6,
+        "line": 1,
+        "column": 9
+      },
+      {
+        "op": "constant",
+        "value": 3,
+        "line": 1,
+        "column": 15
+      },
+      {
+        "op": "compare",
+        "operators": [
+          "<"
+        ],
+        "count": 2,
+        "line": 1,
+        "column": 9
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 1,
+        "column": 1
+      }
+    ]
+  },
+  "short-circuit": {
+    "instructions": [
+      {
+        "op": "load",
+        "name": "print",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "constant",
+        "value": 0,
+        "line": 1,
+        "column": 7
+      },
+      {
+        "op": "jump_if_false_keep",
+        "target": 4,
+        "line": 1,
+        "column": 9
+      },
+      {
+        "op": "load",
+        "name": "missing",
+        "line": 1,
+        "column": 13
+      },
+      {
+        "op": "constant",
+        "value": 2,
+        "line": 1,
+        "column": 22
+      },
+      {
+        "op": "jump_if_true_keep",
+        "target": 7,
+        "line": 1,
+        "column": 24
+      },
+      {
+        "op": "load",
+        "name": "missing",
+        "line": 1,
+        "column": 27
+      },
+      {
+        "op": "call_value",
+        "argc": 2,
+        "spreads": [
+          false,
+          false
+        ],
+        "keywords": [],
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 1,
+        "column": 1
+      }
+    ]
+  },
+  "conditional": {
+    "instructions": [
+      {
+        "op": "constant",
+        "value": 1,
+        "line": 1,
+        "column": 4
+      },
+      {
+        "op": "jump_if_false",
+        "target": 7,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "constant",
+        "value": 2,
+        "line": 2,
+        "column": 11
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "pop",
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "jump",
+        "target": 11,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 4,
+        "column": 5
+      },
+      {
+        "op": "constant",
+        "value": 3,
+        "line": 4,
+        "column": 11
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 4,
+        "column": 5
+      },
+      {
+        "op": "pop",
+        "line": 4,
+        "column": 5
+      }
+    ]
+  },
+  "nested-loops": {
+    "instructions": [
+      {
+        "op": "load",
+        "name": "range",
+        "line": 1,
+        "column": 10
+      },
+      {
+        "op": "constant",
+        "value": 2,
+        "line": 1,
+        "column": 16
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 1,
+        "column": 10
+      },
+      {
+        "op": "iter_prepare",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "loop_guard",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "iter_next",
+        "names": [
+          "x"
+        ],
+        "pattern": {
+          "kind": "leaf"
+        },
+        "target": 23,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "range",
+        "line": 2,
+        "column": 14
+      },
+      {
+        "op": "constant",
+        "value": 2,
+        "line": 2,
+        "column": 20
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 2,
+        "column": 14
+      },
+      {
+        "op": "iter_prepare",
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "loop_guard",
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "iter_next",
+        "names": [
+          "y"
+        ],
+        "pattern": {
+          "kind": "leaf"
+        },
+        "target": 19,
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 3,
+        "column": 9
+      },
+      {
+        "op": "load",
+        "name": "x",
+        "line": 3,
+        "column": 15
+      },
+      {
+        "op": "load",
+        "name": "y",
+        "line": 3,
+        "column": 19
+      },
+      {
+        "op": "binary",
+        "operator": "+",
+        "line": 3,
+        "column": 17
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 3,
+        "column": 9
+      },
+      {
+        "op": "pop",
+        "line": 3,
+        "column": 9
+      },
+      {
+        "op": "jump",
+        "target": 10,
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "pop",
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "jump",
+        "target": 22,
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "pop",
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "jump",
+        "target": 4,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "jump",
+        "target": 26,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 1,
+        "column": 1
+      }
+    ]
+  },
+  "break-continue": {
+    "instructions": [
+      {
+        "op": "load",
+        "name": "range",
+        "line": 1,
+        "column": 10
+      },
+      {
+        "op": "constant",
+        "value": 4,
+        "line": 1,
+        "column": 16
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 1,
+        "column": 10
+      },
+      {
+        "op": "iter_prepare",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "loop_guard",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "iter_next",
+        "names": [
+          "x"
+        ],
+        "pattern": {
+          "kind": "leaf"
+        },
+        "target": 21,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "x",
+        "line": 2,
+        "column": 8
+      },
+      {
+        "op": "constant",
+        "value": 0,
+        "line": 2,
+        "column": 13
+      },
+      {
+        "op": "compare",
+        "operators": [
+          "=="
+        ],
+        "count": 2,
+        "line": 2,
+        "column": 10
+      },
+      {
+        "op": "jump_if_false",
+        "target": 11,
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "jump",
+        "target": 4,
+        "line": 3,
+        "column": 9
+      },
+      {
+        "op": "load",
+        "name": "x",
+        "line": 4,
+        "column": 8
+      },
+      {
+        "op": "constant",
+        "value": 2,
+        "line": 4,
+        "column": 13
+      },
+      {
+        "op": "compare",
+        "operators": [
+          "=="
+        ],
+        "count": 2,
+        "line": 4,
+        "column": 10
+      },
+      {
+        "op": "jump_if_false",
+        "target": 16,
+        "line": 4,
+        "column": 5
+      },
+      {
+        "op": "jump",
+        "target": 23,
+        "line": 5,
+        "column": 9
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 6,
+        "column": 5
+      },
+      {
+        "op": "load",
+        "name": "x",
+        "line": 6,
+        "column": 11
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 6,
+        "column": 5
+      },
+      {
+        "op": "pop",
+        "line": 6,
+        "column": 5
+      },
+      {
+        "op": "jump",
+        "target": 4,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "jump",
+        "target": 24,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 1,
+        "column": 1
+      }
+    ]
+  },
+  "function-return": {
+    "instructions": [
+      {
+        "op": "constant",
+        "value": 2,
+        "line": 1,
+        "column": 14
+      },
+      {
+        "op": "make_function",
+        "name": "add",
+        "params": [
+          {
+            "name": "x",
+            "kind": "positional",
+            "hasDefault": false
+          },
+          {
+            "name": "y",
+            "kind": "positional",
+            "hasDefault": true
+          }
+        ],
+        "localNames": [
+          "x",
+          "y"
+        ],
+        "globals": [],
+        "nonlocals": [],
+        "bytecode": {
+          "instructions": [
+            {
+              "op": "load",
+              "name": "x",
+              "line": 2,
+              "column": 12
+            },
+            {
+              "op": "load",
+              "name": "y",
+              "line": 2,
+              "column": 16
+            },
+            {
+              "op": "binary",
+              "operator": "+",
+              "line": 2,
+              "column": 14
+            },
+            {
+              "op": "return_value",
+              "line": 2,
+              "column": 5
+            },
+            {
+              "op": "constant",
+              "value": null,
+              "line": 1,
+              "column": 1
+            },
+            {
+              "op": "return_value",
+              "line": 1,
+              "column": 1
+            }
+          ]
+        },
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "store",
+        "name": "add",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 3,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "add",
+        "line": 3,
+        "column": 7
+      },
+      {
+        "op": "constant",
+        "value": 3,
+        "line": 3,
+        "column": 11
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 3,
+        "column": 7
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 3,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 3,
+        "column": 1
+      }
+    ]
+  },
+  "recursion": {
+    "instructions": [
+      {
+        "op": "make_function",
+        "name": "fact",
+        "params": [
+          {
+            "name": "n",
+            "kind": "positional",
+            "hasDefault": false
+          }
+        ],
+        "localNames": [
+          "n"
+        ],
+        "globals": [],
+        "nonlocals": [],
+        "bytecode": {
+          "instructions": [
+            {
+              "op": "load",
+              "name": "n",
+              "line": 2,
+              "column": 8
+            },
+            {
+              "op": "constant",
+              "value": 2,
+              "line": 2,
+              "column": 12
+            },
+            {
+              "op": "compare",
+              "operators": [
+                "<"
+              ],
+              "count": 2,
+              "line": 2,
+              "column": 10
+            },
+            {
+              "op": "jump_if_false",
+              "target": 6,
+              "line": 2,
+              "column": 5
+            },
+            {
+              "op": "constant",
+              "value": 1,
+              "line": 3,
+              "column": 16
+            },
+            {
+              "op": "return_value",
+              "line": 3,
+              "column": 9
+            },
+            {
+              "op": "load",
+              "name": "n",
+              "line": 4,
+              "column": 12
+            },
+            {
+              "op": "load",
+              "name": "fact",
+              "line": 4,
+              "column": 16
+            },
+            {
+              "op": "load",
+              "name": "n",
+              "line": 4,
+              "column": 21
+            },
+            {
+              "op": "constant",
+              "value": 1,
+              "line": 4,
+              "column": 25
+            },
+            {
+              "op": "binary",
+              "operator": "-",
+              "line": 4,
+              "column": 23
+            },
+            {
+              "op": "call_value",
+              "argc": 1,
+              "spreads": [
+                false
+              ],
+              "keywords": [],
+              "line": 4,
+              "column": 16
+            },
+            {
+              "op": "binary",
+              "operator": "*",
+              "line": 4,
+              "column": 14
+            },
+            {
+              "op": "return_value",
+              "line": 4,
+              "column": 5
+            },
+            {
+              "op": "constant",
+              "value": null,
+              "line": 1,
+              "column": 1
+            },
+            {
+              "op": "return_value",
+              "line": 1,
+              "column": 1
+            }
+          ]
+        },
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "store",
+        "name": "fact",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 5,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "fact",
+        "line": 5,
+        "column": 7
+      },
+      {
+        "op": "constant",
+        "value": 5,
+        "line": 5,
+        "column": 12
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 5,
+        "column": 7
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 5,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 5,
+        "column": 1
+      }
+    ]
+  },
+  "try-except-else-finally": {
+    "instructions": [
+      {
+        "op": "setup_finally",
+        "target": 19,
+        "end": 24,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "setup_except",
+        "end": 7,
+        "handlers": [
+          {
+            "type": "ValueError",
+            "name": "error",
+            "target": 12,
+            "end": 17
+          }
+        ],
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "constant",
+        "value": 1,
+        "line": 2,
+        "column": 11
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "pop",
+        "line": 2,
+        "column": 5
+      },
+      {
+        "op": "pop_except",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 6,
+        "column": 5
+      },
+      {
+        "op": "constant",
+        "value": 2,
+        "line": 6,
+        "column": 11
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 6,
+        "column": 5
+      },
+      {
+        "op": "pop",
+        "line": 6,
+        "column": 5
+      },
+      {
+        "op": "jump",
+        "target": 18,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 4,
+        "column": 5
+      },
+      {
+        "op": "load",
+        "name": "error",
+        "line": 4,
+        "column": 11
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 4,
+        "column": 5
+      },
+      {
+        "op": "pop",
+        "line": 4,
+        "column": 5
+      },
+      {
+        "op": "end_handler",
+        "line": 3,
+        "column": 1
+      },
+      {
+        "op": "jump",
+        "target": 18,
+        "line": 3,
+        "column": 1
+      },
+      {
+        "op": "jump",
+        "target": 24,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 8,
+        "column": 5
+      },
+      {
+        "op": "constant",
+        "value": 3,
+        "line": 8,
+        "column": 11
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 8,
+        "column": 5
+      },
+      {
+        "op": "pop",
+        "line": 8,
+        "column": 5
+      },
+      {
+        "op": "end_finally",
+        "line": 1,
+        "column": 1
+      }
+    ]
+  },
+  "return-finally": {
+    "instructions": [
+      {
+        "op": "make_function",
+        "name": "f",
+        "params": [],
+        "localNames": [],
+        "globals": [],
+        "nonlocals": [],
+        "bytecode": {
+          "instructions": [
+            {
+              "op": "setup_finally",
+              "target": 4,
+              "end": 9,
+              "line": 2,
+              "column": 5
+            },
+            {
+              "op": "constant",
+              "value": 1,
+              "line": 3,
+              "column": 16
+            },
+            {
+              "op": "return_value",
+              "line": 3,
+              "column": 9
+            },
+            {
+              "op": "jump",
+              "target": 9,
+              "line": 2,
+              "column": 5
+            },
+            {
+              "op": "load",
+              "name": "print",
+              "line": 5,
+              "column": 9
+            },
+            {
+              "op": "constant",
+              "value": 2,
+              "line": 5,
+              "column": 15
+            },
+            {
+              "op": "call_value",
+              "argc": 1,
+              "spreads": [
+                false
+              ],
+              "keywords": [],
+              "line": 5,
+              "column": 9
+            },
+            {
+              "op": "pop",
+              "line": 5,
+              "column": 9
+            },
+            {
+              "op": "end_finally",
+              "line": 2,
+              "column": 5
+            },
+            {
+              "op": "constant",
+              "value": null,
+              "line": 1,
+              "column": 1
+            },
+            {
+              "op": "return_value",
+              "line": 1,
+              "column": 1
+            }
+          ]
+        },
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "store",
+        "name": "f",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 6,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "f",
+        "line": 6,
+        "column": 7
+      },
+      {
+        "op": "call_value",
+        "argc": 0,
+        "spreads": [],
+        "keywords": [],
+        "line": 6,
+        "column": 7
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 6,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 6,
+        "column": 1
+      }
+    ]
+  },
+  "class": {
+    "instructions": [
+      {
+        "op": "make_class",
+        "name": "Box",
+        "bytecode": {
+          "instructions": [
+            {
+              "op": "make_function",
+              "name": "__init__",
+              "params": [
+                {
+                  "name": "self",
+                  "kind": "positional",
+                  "hasDefault": false
+                },
+                {
+                  "name": "x",
+                  "kind": "positional",
+                  "hasDefault": false
+                }
+              ],
+              "localNames": [
+                "self",
+                "x"
+              ],
+              "globals": [],
+              "nonlocals": [],
+              "bytecode": {
+                "instructions": [
+                  {
+                    "op": "load",
+                    "name": "x",
+                    "line": 3,
+                    "column": 18
+                  },
+                  {
+                    "op": "load",
+                    "name": "self",
+                    "line": 3,
+                    "column": 9
+                  },
+                  {
+                    "op": "store_attr_keep",
+                    "name": "x",
+                    "line": 3,
+                    "column": 14
+                  },
+                  {
+                    "op": "pop",
+                    "line": 3,
+                    "column": 9
+                  },
+                  {
+                    "op": "constant",
+                    "value": null,
+                    "line": 2,
+                    "column": 5
+                  },
+                  {
+                    "op": "return_value",
+                    "line": 2,
+                    "column": 5
+                  }
+                ]
+              },
+              "line": 2,
+              "column": 5
+            },
+            {
+              "op": "store",
+              "name": "__init__",
+              "line": 2,
+              "column": 5
+            }
+          ]
+        },
+        "hasParent": false,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "store",
+        "name": "Box",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 4,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "Box",
+        "line": 4,
+        "column": 7
+      },
+      {
+        "op": "constant",
+        "value": 3,
+        "line": 4,
+        "column": 11
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 4,
+        "column": 7
+      },
+      {
+        "op": "load_attr",
+        "name": "x",
+        "line": 4,
+        "column": 14
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 4,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 4,
+        "column": 1
+      }
+    ]
+  },
+  "inheritance-super": {
+    "instructions": [
+      {
+        "op": "make_class",
+        "name": "A",
+        "bytecode": {
+          "instructions": [
+            {
+              "op": "make_function",
+              "name": "value",
+              "params": [
+                {
+                  "name": "self",
+                  "kind": "positional",
+                  "hasDefault": false
+                }
+              ],
+              "localNames": [
+                "self"
+              ],
+              "globals": [],
+              "nonlocals": [],
+              "bytecode": {
+                "instructions": [
+                  {
+                    "op": "constant",
+                    "value": 2,
+                    "line": 3,
+                    "column": 16
+                  },
+                  {
+                    "op": "return_value",
+                    "line": 3,
+                    "column": 9
+                  },
+                  {
+                    "op": "constant",
+                    "value": null,
+                    "line": 2,
+                    "column": 5
+                  },
+                  {
+                    "op": "return_value",
+                    "line": 2,
+                    "column": 5
+                  }
+                ]
+              },
+              "line": 2,
+              "column": 5
+            },
+            {
+              "op": "store",
+              "name": "value",
+              "line": 2,
+              "column": 5
+            }
+          ]
+        },
+        "hasParent": false,
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "store",
+        "name": "A",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "A",
+        "line": 4,
+        "column": 9
+      },
+      {
+        "op": "make_class",
+        "name": "B",
+        "bytecode": {
+          "instructions": [
+            {
+              "op": "make_function",
+              "name": "value",
+              "params": [
+                {
+                  "name": "self",
+                  "kind": "positional",
+                  "hasDefault": false
+                }
+              ],
+              "localNames": [
+                "self"
+              ],
+              "globals": [],
+              "nonlocals": [],
+              "bytecode": {
+                "instructions": [
+                  {
+                    "op": "load",
+                    "name": "super",
+                    "line": 6,
+                    "column": 16
+                  },
+                  {
+                    "op": "call_value",
+                    "argc": 0,
+                    "spreads": [],
+                    "keywords": [],
+                    "line": 6,
+                    "column": 16
+                  },
+                  {
+                    "op": "call_method",
+                    "name": "value",
+                    "argc": 0,
+                    "spreads": [],
+                    "keywords": [],
+                    "line": 6,
+                    "column": 24
+                  },
+                  {
+                    "op": "constant",
+                    "value": 1,
+                    "line": 6,
+                    "column": 34
+                  },
+                  {
+                    "op": "binary",
+                    "operator": "+",
+                    "line": 6,
+                    "column": 32
+                  },
+                  {
+                    "op": "return_value",
+                    "line": 6,
+                    "column": 9
+                  },
+                  {
+                    "op": "constant",
+                    "value": null,
+                    "line": 5,
+                    "column": 5
+                  },
+                  {
+                    "op": "return_value",
+                    "line": 5,
+                    "column": 5
+                  }
+                ]
+              },
+              "line": 5,
+              "column": 5
+            },
+            {
+              "op": "store",
+              "name": "value",
+              "line": 5,
+              "column": 5
+            }
+          ]
+        },
+        "hasParent": true,
+        "line": 4,
+        "column": 1
+      },
+      {
+        "op": "store",
+        "name": "B",
+        "line": 4,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 7,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "B",
+        "line": 7,
+        "column": 7
+      },
+      {
+        "op": "call_value",
+        "argc": 0,
+        "spreads": [],
+        "keywords": [],
+        "line": 7,
+        "column": 7
+      },
+      {
+        "op": "call_method",
+        "name": "value",
+        "argc": 0,
+        "spreads": [],
+        "keywords": [],
+        "line": 7,
+        "column": 11
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 7,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 7,
+        "column": 1
+      }
+    ]
+  },
+  "comprehensions": {
+    "instructions": [
+      {
+        "op": "load",
+        "name": "print",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "range",
+        "line": 1,
+        "column": 43
+      },
+      {
+        "op": "constant",
+        "value": 2,
+        "line": 1,
+        "column": 49
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 1,
+        "column": 43
+      },
+      {
+        "op": "run_comprehension",
+        "bytecode": {
+          "instructions": [
+            {
+              "op": "build_list",
+              "count": 0,
+              "spreads": [],
+              "line": 1,
+              "column": 7
+            },
+            {
+              "op": "store_keep",
+              "name": "\u0000comprehension",
+              "line": 1,
+              "column": 7
+            },
+            {
+              "op": "pop",
+              "line": 1,
+              "column": 7
+            },
+            {
+              "op": "load",
+              "name": "\u0000iterable",
+              "line": 1,
+              "column": 34
+            },
+            {
+              "op": "iter_prepare",
+              "line": 1,
+              "column": 34
+            },
+            {
+              "op": "loop_guard",
+              "line": 1,
+              "column": 34
+            },
+            {
+              "op": "iter_next",
+              "names": [
+                "x"
+              ],
+              "pattern": {
+                "kind": "leaf"
+              },
+              "target": 19,
+              "line": 1,
+              "column": 34
+            },
+            {
+              "op": "load",
+              "name": "x",
+              "line": 1,
+              "column": 55
+            },
+            {
+              "op": "constant",
+              "value": 0,
+              "line": 1,
+              "column": 60
+            },
+            {
+              "op": "compare",
+              "operators": [
+                ">="
+              ],
+              "count": 2,
+              "line": 1,
+              "column": 57
+            },
+            {
+              "op": "jump_if_false",
+              "target": 18,
+              "line": 1,
+              "column": 7
+            },
+            {
+              "op": "load",
+              "name": "\u0000comprehension",
+              "line": 1,
+              "column": 7
+            },
+            {
+              "op": "load",
+              "name": "range",
+              "line": 1,
+              "column": 24
+            },
+            {
+              "op": "constant",
+              "value": 2,
+              "line": 1,
+              "column": 30
+            },
+            {
+              "op": "call_value",
+              "argc": 1,
+              "spreads": [
+                false
+              ],
+              "keywords": [],
+              "line": 1,
+              "column": 24
+            },
+            {
+              "op": "run_comprehension",
+              "bytecode": {
+                "instructions": [
+                  {
+                    "op": "build_list",
+                    "count": 0,
+                    "spreads": [],
+                    "line": 1,
+                    "column": 8
+                  },
+                  {
+                    "op": "store_keep",
+                    "name": "\u0000comprehension",
+                    "line": 1,
+                    "column": 8
+                  },
+                  {
+                    "op": "pop",
+                    "line": 1,
+                    "column": 8
+                  },
+                  {
+                    "op": "load",
+                    "name": "\u0000iterable",
+                    "line": 1,
+                    "column": 15
+                  },
+                  {
+                    "op": "iter_prepare",
+                    "line": 1,
+                    "column": 15
+                  },
+                  {
+                    "op": "loop_guard",
+                    "line": 1,
+                    "column": 15
+                  },
+                  {
+                    "op": "iter_next",
+                    "names": [
+                      "y"
+                    ],
+                    "pattern": {
+                      "kind": "leaf"
+                    },
+                    "target": 14,
+                    "line": 1,
+                    "column": 15
+                  },
+                  {
+                    "op": "load",
+                    "name": "\u0000comprehension",
+                    "line": 1,
+                    "column": 8
+                  },
+                  {
+                    "op": "load",
+                    "name": "x",
+                    "line": 1,
+                    "column": 9
+                  },
+                  {
+                    "op": "load",
+                    "name": "y",
+                    "line": 1,
+                    "column": 13
+                  },
+                  {
+                    "op": "binary",
+                    "operator": "*",
+                    "line": 1,
+                    "column": 11
+                  },
+                  {
+                    "op": "call_method",
+                    "name": "append",
+                    "argc": 1,
+                    "spreads": [
+                      false
+                    ],
+                    "keywords": [],
+                    "line": 1,
+                    "column": 8
+                  },
+                  {
+                    "op": "pop",
+                    "line": 1,
+                    "column": 8
+                  },
+                  {
+                    "op": "jump",
+                    "target": 5,
+                    "line": 1,
+                    "column": 15
+                  },
+                  {
+                    "op": "pop",
+                    "line": 1,
+                    "column": 15
+                  },
+                  {
+                    "op": "jump",
+                    "target": 17,
+                    "line": 1,
+                    "column": 15
+                  },
+                  {
+                    "op": "pop",
+                    "line": 1,
+                    "column": 15
+                  },
+                  {
+                    "op": "load",
+                    "name": "\u0000comprehension",
+                    "line": 1,
+                    "column": 8
+                  },
+                  {
+                    "op": "return_value",
+                    "line": 1,
+                    "column": 8
+                  }
+                ]
+              },
+              "iterableName": "\u0000iterable",
+              "localNames": [
+                "\u0000comprehension",
+                "\u0000iterable",
+                "\u0000key",
+                "y"
+              ],
+              "line": 1,
+              "column": 8
+            },
+            {
+              "op": "call_method",
+              "name": "append",
+              "argc": 1,
+              "spreads": [
+                false
+              ],
+              "keywords": [],
+              "line": 1,
+              "column": 7
+            },
+            {
+              "op": "pop",
+              "line": 1,
+              "column": 7
+            },
+            {
+              "op": "jump",
+              "target": 5,
+              "line": 1,
+              "column": 34
+            },
+            {
+              "op": "pop",
+              "line": 1,
+              "column": 34
+            },
+            {
+              "op": "jump",
+              "target": 22,
+              "line": 1,
+              "column": 34
+            },
+            {
+              "op": "pop",
+              "line": 1,
+              "column": 34
+            },
+            {
+              "op": "load",
+              "name": "\u0000comprehension",
+              "line": 1,
+              "column": 7
+            },
+            {
+              "op": "return_value",
+              "line": 1,
+              "column": 7
+            }
+          ]
+        },
+        "iterableName": "\u0000iterable",
+        "localNames": [
+          "\u0000comprehension",
+          "\u0000iterable",
+          "\u0000key",
+          "x"
+        ],
+        "line": 1,
+        "column": 7
+      },
+      {
+        "op": "call_value",
+        "argc": 1,
+        "spreads": [
+          false
+        ],
+        "keywords": [],
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 1,
+        "column": 1
+      }
+    ]
+  },
+  "user-module": {
+    "instructions": [
+      {
+        "op": "import_module",
+        "module": "helper",
+        "member": {
+          "$undefined": true
+        },
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "store",
+        "name": "h",
+        "line": 1,
+        "column": 1
+      },
+      {
+        "op": "import_module",
+        "module": "helper",
+        "member": "value",
+        "line": 2,
+        "column": 1
+      },
+      {
+        "op": "store",
+        "name": "value",
+        "line": 2,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "print",
+        "line": 3,
+        "column": 1
+      },
+      {
+        "op": "load",
+        "name": "h",
+        "line": 3,
+        "column": 7
+      },
+      {
+        "op": "load_attr",
+        "name": "value",
+        "line": 3,
+        "column": 9
+      },
+      {
+        "op": "load",
+        "name": "value",
+        "line": 3,
+        "column": 16
+      },
+      {
+        "op": "call_value",
+        "argc": 2,
+        "spreads": [
+          false,
+          false
+        ],
+        "keywords": [],
+        "line": 3,
+        "column": 1
+      },
+      {
+        "op": "pop",
+        "line": 3,
+        "column": 1
+      }
+    ]
+  }
+}
