@@ -1,4 +1,5 @@
-import { EditorState, StateEffect, StateField, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, StateEffect, StateField, type Extension } from "@codemirror/state";
+import { executionDecoration, setExecutionPoint, type EditorExecutionPoint } from "./execution-decoration";
 import { EditorView, Decoration, type DecorationSet, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { python } from "@codemirror/lang-python";
@@ -21,15 +22,27 @@ const errorLineField = StateField.define<DecorationSet>({
 export class LearningEditor {
   readonly view: EditorView;
   private readonly extensions: Extension[];
+  private readonly editing = new Compartment();
   constructor(parent: HTMLElement, code: string, onChange: () => void, readOnly = false) {
-    this.extensions = [lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(), python(), closeBrackets(), errorLineField, keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap, indentWithTab]), readOnly ? [syntaxHighlighting(exampleHighlight), EditorState.readOnly.of(true), EditorView.editable.of(false), EditorView.contentAttributes.of({ "aria-label": "읽기 전용 Python 예제 코드", tabindex: "0" })] : EditorView.lineWrapping, EditorView.updateListener.of(update => { if (update.docChanged) onChange(); })];
+    this.extensions = [lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(), python(), closeBrackets(), errorLineField, executionDecoration, this.editing.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]), keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap, indentWithTab]), readOnly ? [syntaxHighlighting(exampleHighlight), EditorView.contentAttributes.of({ "aria-label": "읽기 전용 Python 예제 코드", tabindex: "0" })] : EditorView.lineWrapping, EditorView.updateListener.of(update => { if (update.docChanged) onChange(); })];
     this.view = new EditorView({ state: this.createState(code), parent });
   }
   createState(code: string): EditorState { return EditorState.create({ doc: code, extensions: this.extensions }); }
-  errorState(state: EditorState, line: number | null): EditorState { return state.update({ effects: setErrorLine.of(line && line <= state.doc.lines ? line : null) }).state; }
+  errorState(state: EditorState, line: number | null): EditorState { return state.update({ effects: [setErrorLine.of(line && line <= state.doc.lines ? line : null), setExecutionPoint.of(null)] }).state; }
+  executionState(state: EditorState, point: EditorExecutionPoint | null): EditorState { return state.update({ effects: setExecutionPoint.of(point) }).state; }
+  lockState(state: EditorState, locked: boolean): EditorState { return state.update({ effects: this.editing.reconfigure([EditorState.readOnly.of(locked), EditorView.editable.of(!locked)]) }).state; }
+  setExecution(point: EditorExecutionPoint | null): void { this.view.dispatch({ effects: setExecutionPoint.of(point) }); if (point) this.scrollExecution(point); }
+  scrollExecution(point: EditorExecutionPoint): void {
+    requestAnimationFrame(() => {
+      if (point.line > this.view.state.doc.lines) return;
+      const block = this.view.lineBlockAt(this.view.state.doc.line(point.line).from), scroll = this.view.scrollDOM;
+      if (block.top < scroll.scrollTop) scroll.scrollTop = block.top;
+      else if (block.bottom > scroll.scrollTop + scroll.clientHeight) scroll.scrollTop = block.bottom - scroll.clientHeight;
+    });
+  }
   get value(): string { return this.view.state.doc.toString(); }
   setValue(value: string): void { this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: value } }); }
-  setError(line: number | null): void { this.view.dispatch({ effects: setErrorLine.of(line) }); if (line) this.view.dispatch({ selection: { anchor: this.view.state.doc.line(line).from }, scrollIntoView: true }); }
-  insertTab(): void { const range = this.view.state.selection.main; this.view.dispatch({ changes: { from: range.from, to: range.to, insert: "    " }, selection: { anchor: range.from + 4 } }); this.view.focus(); }
+  setError(line: number | null): void { this.view.dispatch({ effects: [setErrorLine.of(line), setExecutionPoint.of(null)] }); if (line) this.view.dispatch({ selection: { anchor: this.view.state.doc.line(line).from }, scrollIntoView: true }); }
+  insertTab(): void { if (this.view.state.readOnly) return; const range = this.view.state.selection.main; this.view.dispatch({ changes: { from: range.from, to: range.to, insert: "    " }, selection: { anchor: range.from + 4 } }); this.view.focus(); }
   destroy(): void { this.view.destroy(); }
 }

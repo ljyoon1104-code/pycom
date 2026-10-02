@@ -1,6 +1,8 @@
 import { isFloat, floatText, numeric, numberValue, type FloatValue } from "./numbers-v2";
 export interface RangeValue { kind: "range"; start: number; stop: number; step: number; }
-export interface IteratorValue { kind: "iterator"; values: Value[]; index: number; pull?: () => Value | undefined; validate?: () => string | undefined; file?: FileValue; exhausted?: boolean; }
+export type CallRequest = { i: import("../compiler/opcode").Instruction; callable: Value; args: Value[] };
+export type RuntimeTask<T> = Generator<CallRequest, T, Value>;
+export interface IteratorValue { kind: "iterator"; values: Value[]; index: number; pull?: () => RuntimeTask<Value | undefined>; validate?: () => string | undefined; file?: FileValue; exhausted?: boolean; }
 export interface BuiltinValue { kind: "builtin"; name: string; }
 export interface ModuleValue { kind: "module"; name: string; attributes: ReadonlyMap<string, Value>; }
 export interface DateValue { kind: "date"; readonly year: number; readonly month: number; readonly day: number; }

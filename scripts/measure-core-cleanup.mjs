@@ -9,6 +9,10 @@ import { pathToFileURL } from "node:url";
 // Development-only, paired baseline/current measurements. No production hooks.
 const roots = [process.env.CORE_BASELINE ?? "artifacts/code-cleanup-stage3/baseline", "."];
 const output = process.env.CORE_PERFORMANCE_OUTPUT ?? "artifacts/code-cleanup-stage3/performance.json";
+// Match the Worker's normal-mode compile options when measuring execution tracing.
+// The baseline compiler safely ignores the optional second argument.
+const workerMetadata = process.env.CORE_EXECUTION_METADATA === "1";
+const sourceMetadata = source => workerMetadata ? { sourceId: "entry", fileName: "main.py", code: source } : undefined;
 const cases = [
   ["loop-10000", "x = 0\nfor n in range(10000):\n    x += 1"],
   ["function-calls", "def f(x):\n    return x + 1\nfor n in range(1500):\n    f(n)"],
@@ -36,14 +40,14 @@ try {
     runtimes.push({ compile, VM });
   }
   const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
-  const report = { node: process.version, platform: process.platform, mode: process.env.CORE_BUNDLE === "1" ? "bundled" : "vite-ssr", warmups: 5, rounds: 15, gc: !!global.gc, results: [] };
+  const report = { node: process.version, platform: process.platform, mode: process.env.CORE_BUNDLE === "1" ? "bundled" : "vite-ssr", workerMetadata, warmups: 5, rounds: 15, gc: !!global.gc, results: [] };
   for (const [name, source] of [...cases, ["compiler", cases.map(([, source]) => source).join("\n")]]) {
-    const codes = runtimes.map(runtime => runtime.compile(source));
+    const codes = runtimes.map(runtime => runtime.compile(source, sourceMetadata(source)));
     const actions = runtimes.map((runtime, index) => name === "compiler"
-      ? () => { for (let count = 0; count < 30; count++) runtime.compile(source); }
+      ? () => { for (let count = 0; count < 30; count++) runtime.compile(source, sourceMetadata(source)); }
       : () => { for (let count = 0; count < (name === "module-first-import" ? 100 : 3); count++) {
         const events = [];
-        new runtime.VM(codes[index], event => events.push(event), new Map([["helper.py", "value = 7"]])).execute();
+        new runtime.VM(codes[index], event => events.push(event), new Map([["helper.py", "value = 7"]]), workerMetadata ? { fileName: "main.py", inputLocation: true } : {}).execute();
         if (name === "loop-10000") {
           // Existing guard counts the final loop check too; preserve this limit.
           assert.equal(events.at(-1)?.type, "error");

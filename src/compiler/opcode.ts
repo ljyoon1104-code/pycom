@@ -50,4 +50,11 @@ export type Instruction =
   | ({ op: "run_comprehension"; bytecode: Bytecode; localNames: string[]; iterableName: string } & SourcePoint)
   | ({ op: "loop_guard" } & SourcePoint);
 export interface Bytecode { instructions: Instruction[]; }
+export interface ExecutionSource { sourceId: string; fileName: string; code: string; }
+export interface ExecutionPoint extends SourcePoint { instruction: number; }
+export interface ExecutionMetadata { source: ExecutionSource; points: ReadonlyMap<number, ExecutionPoint>; locations?: ReadonlyMap<number, ExecutionPoint>; initialLoopGuards?: ReadonlyMap<number, number>; }
+// Deliberately out-of-band: opcode shape, serialization and execution semantics stay unchanged.
+const executionMetadata = new WeakMap<Bytecode, ExecutionMetadata>();
+export function attachExecutionMetadata(code: Bytecode, metadata: ExecutionMetadata): Bytecode { executionMetadata.set(code, metadata); return code; }
+export function executionMetadataOf(code: Bytecode): ExecutionMetadata | undefined { return executionMetadata.get(code); }
 export type CompileResult = { bytecode: Bytecode } | { error: StudentError };

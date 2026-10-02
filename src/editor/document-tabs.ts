@@ -1,6 +1,7 @@
 import { cycleDialogFocus } from "../ui/dialogs";
 import { Documents, DOCUMENT_SESSION_KEY, contentOf, isDirty, type EditorDocument } from "./documents";
 import { LearningEditor } from "./editor";
+import type { EditorExecutionPoint } from "./execution-decoration";
 import { appFile, checkedPut, type AppFile, type FileStore } from "../files/storage";
 
 type Choice = { value: string; label: string };
@@ -12,6 +13,7 @@ interface Options {
   changed: () => void;
   message: (text: string, error?: boolean) => void;
   running: () => string | undefined;
+  activated?: () => void;
 }
 
 /** One EditorView, independent EditorStates; persistent storage is touched only by explicit operations. */
@@ -27,6 +29,7 @@ export class DocumentTabs {
   private reservedNames = new Set<string>();
   private unloadRegistered = false;
   private ready = false;
+  private readonly executionLocks = new Set<string>();
   private readonly unload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
   constructor(private readonly options: Options, initialCode: string) {
     this.documents = new Documents(code => options.editor.createState(code));
@@ -59,8 +62,9 @@ export class DocumentTabs {
     doc.scrollSnapshot = this.options.editor.view.scrollSnapshot();
   }
   edited(): void { this.capture(); this.render(); }
-  private display(focus = false): void {
+  private display(focus = false, revealTab = true): void {
     this.options.editor.view.setState(this.active.state);
+    this.options.activated?.();
     const doc = this.active;
     if (doc.scrollSnapshot) this.options.editor.view.dispatch({ effects: doc.scrollSnapshot });
     requestAnimationFrame(() => {
@@ -69,11 +73,17 @@ export class DocumentTabs {
         this.options.editor.view.scrollDOM.scrollTop = doc.scrollTop;
         this.options.editor.view.scrollDOM.scrollLeft = doc.scrollLeft;
       }
-      this.strip.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      const selected = this.strip.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (revealTab) selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      else if (selected) {
+        const box = selected.getBoundingClientRect(), viewport = this.strip.getBoundingClientRect();
+        if (box.left < viewport.left) this.strip.scrollLeft -= viewport.left - box.left;
+        else if (box.right > viewport.right) this.strip.scrollLeft += box.right - viewport.right;
+      }
     });
     this.render(); if (focus) this.options.editor.view.focus();
   }
-  activate(id: string, focus = false): void { this.capture(); if (this.documents.activate(id)) this.display(focus); }
+  activate(id: string, focus = false, revealTab = true): void { this.capture(); if (this.documents.activate(id)) this.display(focus, revealTab); }
   newDocument(): void {
     this.capture(); let n = 1;
     const names = new Set([...this.options.files().keys(), ...this.documents.items.map(doc => doc.fileName)]);
@@ -166,6 +176,7 @@ export class DocumentTabs {
   }
   async close(id: string): Promise<void> {
     if (this.busy) return;
+    if (this.executionLocks.has(id)) { this.modal = true; try { await this.present(this.layer, "실행 중인 문서", "먼저 중지한 뒤 이 문서를 닫아 주세요.", [{ value: "cancel", label: "확인" }]); } finally { this.modal = false; } return; }
     this.capture(); const doc = this.documents.find(id); if (!doc) return;
     this.modal = true;
     try {
@@ -184,6 +195,7 @@ export class DocumentTabs {
   }
   async deleteActive(): Promise<void> {
     if (this.busy) return;
+    if (this.executionLocks.has(this.active.id)) { this.modal = true; try { await this.present(this.layer, "실행 중인 문서", "먼저 중지한 뒤 이 문서를 삭제해 주세요.", [{ value: "cancel", label: "확인" }]); } finally { this.modal = false; } return; }
     this.capture(); const doc = this.active, name = doc.savedFileName; if (!name) { this.options.message("아직 저장되지 않은 문서입니다. 탭 닫기를 사용하세요."); return; }
     this.modal = true;
     try {
@@ -197,7 +209,18 @@ export class DocumentTabs {
     } catch { this.options.message("파일을 삭제할 수 없습니다. 문서는 유지됩니다.", true); }
     finally { this.modal = false; }
   }
-  external(file: AppFile): void { this.capture(); const prior = this.active.state; this.documents.external(file); if (prior !== this.active.state) this.display(); else this.render(); }
+  external(file: AppFile): void { this.capture(); const doc = this.documents.named(file.name); if (doc && this.executionLocks.has(doc.id) && file.content !== doc.savedContent) { doc.savedContent = file.content; doc.externalChanged = contentOf(doc) !== file.content; this.render(); return; } const prior = this.active.state; this.documents.external(file); if (prior !== this.active.state) this.display(); else this.render(); }
+  lockExecution(id: string, locked: boolean): void {
+    this.capture(); const doc = this.documents.find(id); if (!doc) return;
+    if (locked) this.executionLocks.add(id); else this.executionLocks.delete(id);
+    doc.state = this.options.editor.lockState(doc.state, locked);
+    if (this.active === doc) this.options.editor.view.setState(doc.state);
+  }
+  highlightExecution(id: string, point: EditorExecutionPoint | null): void {
+    this.capture(); const doc = this.documents.find(id); if (!doc) return;
+    if (this.active === doc) { this.options.editor.setExecution(point); this.capture(); }
+    else doc.state = this.options.editor.executionState(doc.state, point);
+  }
   replaceSaved(files: Map<string, AppFile>): void {
     this.capture();
     for (const doc of [...this.documents.items]) {

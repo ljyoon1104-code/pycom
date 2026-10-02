@@ -6,6 +6,9 @@ import { renderFileList } from "../ui/file-panel";
 import { createHelpController } from "../ui/help-controller";
 import { bindWorkspaceActions } from "../ui/workspace-bindings";
 import { initialCode } from "./initial-code";
+import { ExecutionSession } from "./execution-session";
+import { createExecutionControls } from "../ui/execution-controls";
+import { ExecutionSources } from "../editor/execution-sources";
 
 import { mountExampleBrowser } from "../examples/browser";
 import type { LearningExample } from "../examples/model";
@@ -20,7 +23,8 @@ import { decodeImportedBytes, FileDecodingError, type ImportEncodingChoice } fro
 import { appFile, checkedPut, IndexedDbFileStore, normalizeName, type AppFile } from "../files/storage";
 import { setupPwa } from "../pwa/register";
 import { TurtleCanvasRenderer } from "../graphics/turtle-canvas";
-import type { FromWorker, ToWorker } from "../runtime/protocol";
+import type { FromWorker, WorkerRequest as ToWorker } from "../runtime/protocol";
+import type { StudentError } from "../compiler/token";
 
 
 /** Explicit application lifetime: state and event registration remain local. */
@@ -33,10 +37,11 @@ export function bootstrap(): void {
   const elements = getAppElements(app, appStatus);
   const { host, consoleEl, graphicsTab, turtleCanvas, runButton, stopButton, modified, nameEl, filePanel, fileList, dialog, connectionEl, pwaMessage, iosInstallHint, updateNotice, updateButton, installButton } = elements;
   const turtleRenderer = new TurtleCanvasRenderer(turtleCanvas);
-  let restoring = false, worker: Worker | undefined, editor: LearningEditor, tabs: DocumentTabs;
+  let restoring = false, worker: ExecutionSession | undefined, editor: LearningEditor, tabs: DocumentTabs, executionSources: ExecutionSources | undefined;
   let execution: { id: string; name: string } | undefined;
   const { resultOwner, append, clearConsole, executionStatus, status, renderRunning, selectResult, showGraphics } = createOutputView(app, elements);
-  const setRunning = (value: boolean) => { renderRunning(value, execution?.id === tabs?.active.id); tabs?.render(); };
+  const traceControls = createExecutionControls(topbar as HTMLElement, message => worker?.postMessage(message), executionStatus);
+  const setRunning = (value: boolean, error?: StudentError) => { renderRunning(value, execution?.id === tabs?.active.id); if (!value) { traceControls.finish(); executionSources?.finish(error); } tabs?.render(); };
   let lastExecution: LastExecutionCategory = "실행 전";
   let files = new Map<string, AppFile>();
   const renderFiles = () => renderFileList(fileList, files, tabs?.active.savedFileName, openFile);
@@ -161,37 +166,39 @@ export function bootstrap(): void {
     nameEl.textContent = tabs.active.fileName; modified.textContent = isDirty(tabs.active) ? " *" : "";
     runButton.disabled = restoring || Boolean(worker && execution?.id === tabs.active.id);
     renderFiles();
-  }, message: (text, error) => append(text, error ? "console-error" : "console-status"), running: () => worker ? execution?.id : undefined }, initialCode);
+  }, message: (text, error) => append(text, error ? "console-error" : "console-status"), running: () => worker ? execution?.id : undefined, activated: () => executionSources?.showDraft() }, initialCode);
   tabs.render();
+  executionSources = new ExecutionSources(tabs, host);
   bindWorkspaceActions(app, elements, { insertTab: () => editor.insertTab(), clearConsole, newFile, save, saveAs, importFile, exportFile, backupAll, restoreAll, removeCurrent, showExamplesDialog, showHelpDialog, selectResult });
   window.addEventListener("beforeunload", event => { if (restoring) event.preventDefault(); });
   window.addEventListener("keydown", event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (!restoring) void tabs.save(event.shiftKey); } });
   function showInput(prompt: string): void { const source = worker; const row = document.createElement("form"); row.className = "input-row"; row.innerHTML = `<span class="input-owner"></span><span class="input-prompt"></span><input class="console-input" aria-label="프로그램 입력" autocomplete="off" /><button class="input-submit" type="submit">입력</button>`; row.querySelector<HTMLElement>(".input-owner")!.textContent = `입력 대기: ${execution?.name ?? ""}`; row.querySelector<HTMLElement>(".input-prompt")!.textContent = prompt; const input = row.querySelector<HTMLInputElement>("input")!; input.setAttribute("aria-label", `${execution?.name} 프로그램 입력`); row.addEventListener("submit", event => { event.preventDefault(); if (source !== worker) return; const value = input.value; const answer = document.createElement("span"); answer.className = "console-line"; answer.textContent = `${prompt}${value}\n`; row.replaceWith(answer); source?.postMessage({ type: "input", value } satisfies ToWorker); }); consoleEl.append(row); input.focus({ preventScroll: false }); row.scrollIntoView({ block: "nearest" }); }
   function finish(kind: "complete" | "stopped"): void { lastExecution = kind === "complete" ? "성공" : "사용자 중지"; executionStatus(kind === "complete" ? "실행이 완료되었습니다." : "실행이 중지되었습니다."); worker?.terminate(); worker = undefined; setRunning(false); }
   let fileWrites: Promise<void> = Promise.resolve();
-  function receive(message: FromWorker): void { switch (message.type) { case "output": append(message.text); break; case "graphics": showGraphics(); turtleRenderer.apply(message.commands); break; case "input-request": showInput(message.prompt); break; case "file-change": { const file = appFile(message.name, message.content); fileWrites = fileWrites.then(async () => { await checkedPut(store, file); files.set(file.name, file); tabs.external(file); }).catch(() => append("파일 변경을 저장할 수 없습니다. 편집 내용은 유지됩니다.", "console-error")); break; } case "error": {
+  function receive(message: FromWorker): void { switch (message.type) { case "source": executionSources?.source(message.source); break; case "execution": traceControls.receive(message); if (message.location && message.state !== "running") executionSources?.location(message.location); else if (!message.location) executionSources?.clearLocation(); break; case "output": append(message.text); break; case "graphics": showGraphics(); turtleRenderer.apply(message.commands); break; case "input-request": showInput(message.prompt); break; case "file-change": { const file = appFile(message.name, message.content); fileWrites = fileWrites.then(async () => { await checkedPut(store, file); files.set(file.name, file); tabs.external(file); }).catch(() => append("파일 변경을 저장할 수 없습니다. 편집 내용은 유지됩니다.", "console-error")); break; } case "error": {
       lastExecution = executionErrorCategory(message.error.message);
       const moduleError = message.error.fileName && message.error.fileName !== execution?.name;
       if (execution && !moduleError) tabs.setError(execution.id, message.error.line);
-      append(`${moduleError ? `${message.error.fileName}: ` : ""}${message.error.line}번째 줄: ${message.error.message}`, "console-error"); worker?.terminate(); worker = undefined; setRunning(false); break;
+      append(`${moduleError ? `${message.error.fileName}: ` : ""}${message.error.line}번째 줄: ${message.error.message}`, "console-error"); worker?.terminate(); worker = undefined; setRunning(false, message.error); break;
     } case "complete": finish("complete"); break; case "stopped": finish("stopped"); break; } }
   let runGeneration = 0;
   runButton.addEventListener("click", async () => {
     if (restoring) return;
     const generation = ++runGeneration;
     const id = tabs.active.id, name = tabs.active.fileName, code = editor.value;
-    worker?.terminate(); worker = undefined;
+    worker?.terminate(); worker = undefined; setRunning(false);
     await fileWrites;
     if (restoring || generation !== runGeneration) return;
     clearConsole(); turtleRenderer.reset(); graphicsTab.hidden = true; selectResult("text");
     execution = { id, name }; resultOwner.textContent = `실행: ${name}`; tabs.setError(id, null); executionStatus("실행 중입니다.");
-    const source = new Worker(new URL("../runtime/worker.ts", import.meta.url), { type: "module" }); worker = source; setRunning(true);
+    const source = new ExecutionSession(() => new Worker(new URL("../runtime/worker.ts", import.meta.url), { type: "module" })); worker = source;
+    executionSources?.start(id, traceControls.mode); traceControls.start(); setRunning(true);
     source.onmessage = ({ data }: MessageEvent<FromWorker>) => { if (worker === source) receive(data); };
     source.onerror = () => {
       if (worker !== source) return;
       lastExecution = "시스템 오류"; append("실행 중 오류가 발생했습니다.", "console-error"); source.terminate(); worker = undefined; setRunning(false);
     };
-    source.postMessage({ type: "run", code, fileName: name, files: [...files.values()].map(file => ({ name: file.name, content: file.content, encoding: file.encoding })) } satisfies ToWorker);
+    source.postMessage({ type: "run", code, fileName: name, mode: traceControls.mode, speed: traceControls.speed, files: [...files.values()].map(file => ({ name: file.name, content: file.content, encoding: file.encoding })) } satisfies ToWorker);
   });
   stopButton.addEventListener("click", () => worker?.postMessage({ type: "stop" } satisfies ToWorker));
   store.list().then(saved => { files = new Map(saved.map(file => [file.name, file])); tabs.initialize(files); renderFiles(); }).catch(() => append("저장소를 열 수 없습니다.", "console-error"));

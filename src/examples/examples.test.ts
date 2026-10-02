@@ -8,7 +8,7 @@ import { TEXTBOOK_EXAMPLES } from "./catalog";
 import { CORE_EXAMPLES } from "./core-v2";
 import { emptyFilters, exampleHash, exampleRoute, filterExamples, STATUS, TOPICS, type LearningExample } from "./model";
 import { ExampleRunner, type ExampleWorker } from "./runner";
-import type { FromWorker, ToWorker } from "../runtime/protocol";
+import type { FromWorker, ToWorker, WorkerEvent } from "../runtime/protocol";
 
 export function executeExample(example: Pick<LearningExample, "code" | "inputGuide" | "dataFiles">) {
   const events: VMEvent[] = [];
@@ -79,14 +79,14 @@ describe("hash routing", () => {
 class FakeWorker implements ExampleWorker {
   onmessage: ExampleWorker["onmessage"] = null; onerror: ExampleWorker["onerror"] = null;
   postMessage = vi.fn<(message: ToWorker) => void>(); terminate = vi.fn();
-  emit(data: FromWorker) { this.onmessage?.({ data } as MessageEvent<FromWorker>); }
+  emit(event: WorkerEvent) { const data = { ...event, runId: this.postMessage.mock.calls[0][0].runId }; this.onmessage?.({ data } as MessageEvent<FromWorker>); }
 }
 describe("isolated Worker lifecycle", () => {
   const data = TEXTBOOK_EXAMPLES.find(e => e.status === "data")!;
-  function setup() { const workers: FakeWorker[] = [], events: FromWorker[] = []; const runner = new ExampleRunner(() => { const worker = new FakeWorker(); workers.push(worker); return worker; }, event => events.push(event)); return { workers, events, runner }; }
+  function setup() { const workers: FakeWorker[] = [], events: WorkerEvent[] = []; const runner = new ExampleRunner(() => { const worker = new FakeWorker(); workers.push(worker); return worker; }, event => events.push(event)); return { workers, events, runner }; }
   it("passes only own sample files; never forwards file writes to student storage", () => {
     const { workers, events, runner } = setup(); runner.start(data);
-    expect(workers[0].postMessage).toHaveBeenCalledWith({ type: "run", code: data.code, files: data.dataFiles });
+    expect(workers[0].postMessage).toHaveBeenCalledWith({ type: "run", code: data.code, fileName: data.suggestedFileName, mode: "normal", speed: 500, files: data.dataFiles, runId: expect.any(String) });
     workers[0].emit({ type: "file-change", name: "student.py", content: "changed" }); expect(events).toEqual([]);
   });
   it.each(["complete", "stopped"] as const)("discards worker and files on %s", type => {
@@ -96,11 +96,11 @@ describe("isolated Worker lifecycle", () => {
   it("stops at input and starts a fresh worker with pristine samples", () => {
     const { workers, runner, events } = setup(); runner.start(data); runner.stop(); runner.start(data);
     expect(workers).toHaveLength(2); expect(events).toContainEqual({ type: "stopped" });
-    expect(workers[1].postMessage).toHaveBeenCalledWith({ type: "run", code: data.code, files: data.dataFiles });
+    expect(workers[1].postMessage).toHaveBeenCalledWith({ type: "run", code: data.code, fileName: data.suggestedFileName, mode: "normal", speed: 500, files: data.dataFiles, runId: expect.any(String) });
   });
   it("forwards input through the standard protocol", () => {
     const { workers, runner } = setup(); runner.start(data); runner.input("민수");
-    expect(workers[0].postMessage).toHaveBeenCalledWith({ type: "input", value: "민수" });
+    expect(workers[0].postMessage).toHaveBeenCalledWith({ type: "input", value: "민수", runId: workers[0].postMessage.mock.calls[0][0].runId });
   });
   it("ignores stale callbacks after navigation and disposes listeners", () => {
     const { workers, runner, events } = setup(); runner.start(data); const late = workers[0].onmessage!;
@@ -109,7 +109,7 @@ describe("isolated Worker lifecycle", () => {
   });
   it("preserves error lines and supports restart after limits", () => {
     const { workers, runner, events } = setup(); runner.start(data);
-    const error: FromWorker = { type: "error", error: { line: 3, column: 1, category: "runtime", message: "출력 제한" } };
+    const error: WorkerEvent = { type: "error", error: { line: 3, column: 1, category: "runtime", message: "출력 제한" } };
     workers[0].emit(error); expect(events).toEqual([error]); expect(workers[0].terminate).toHaveBeenCalledOnce(); runner.start(data); expect(workers).toHaveLength(2);
   });
   it("hides internal system error details", () => {

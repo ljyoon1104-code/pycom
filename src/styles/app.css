@@ -93,6 +93,23 @@
 }
 
 /* Reflow below the normal 320px layout floor (for example at 200% zoom). */
+.topbar { flex-wrap: wrap; }
+.execution-controls { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; order: 4; }
+.browsing-examples > .topbar > .execution-controls { display: none; }
+.execution-controls label, .trace-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.execution-controls label { font-size: .85rem; color: #cbd8ec; }
+.execution-controls button, .execution-controls select { min-height: 44px; min-width: 44px; border-radius: 8px; border: 1px solid #52647f; padding: 6px 10px; background: #29364d; color: #f2f6ff; }
+.trace-controls[hidden] { display: none; }
+.trace-status { font-size: .85rem; overflow-wrap: anywhere; min-width: 0; }
+.execution-source { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.execution-source[hidden], .editor-host[hidden] { display: none; }
+.execution-source-label { margin: 0; padding: 8px 12px; font-size: .82rem; color: #ffdd80; overflow-wrap: anywhere; }
+.execution-source-code { flex: 1; min-height: 120px; overflow: auto; }
+.cm-line.cm-execution-line { background: rgba(255, 214, 102, .22); border-inline-start: 3px solid #ffd666; }
+.cm-execution-token { text-decoration: underline; text-decoration-color: #ffd666; text-underline-offset: 3px; }
+.execution-gutter { min-width: 16px; color: #ffd666; }
+.execution-arrow { font-weight: 800; }
+.cm-line.cm-student-error { background: rgba(255, 95, 111, .24); border-inline-start: 3px solid #ff7f8d; }
 @media (max-width: 319px) {
   body { min-width: 0; }
   .workspace { grid-template-columns: minmax(0, 1fr); }

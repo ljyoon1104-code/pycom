@@ -6,6 +6,8 @@ import { CORE_EXAMPLES } from "./core-v2";
 const ALL_EXAMPLES = [...TEXTBOOK_EXAMPLES, ...CORE_EXAMPLES];
 import { emptyFilters, exampleHash, exampleRoute, filterExamples, STATUS, TOPICS, type LearningExample } from "./model";
 import { ExampleRunner, type ExampleWorker } from "./runner";
+import { createExecutionControls } from "../ui/execution-controls";
+import type { ExecutionSource } from "../compiler/opcode";
 
 const element = <K extends keyof HTMLElementTagNameMap>(tag: K, text = "", className = ""): HTMLElementTagNameMap[K] => {
   const node = document.createElement(tag); node.textContent = text; node.className = className; return node;
@@ -58,6 +60,14 @@ export function mountExampleBrowser(parent: HTMLElement, onVisibility: (active: 
     if (example.correctionNote) { const correction = element("section", "", "example-correction"); correction.append(element("h3", "수정된 예제"), element("p", "교과서 자료의 오류가 있던 개념을 실행 가능한 자체 제작 코드로 구성했습니다."), element("p", example.correctionNote)); detail.append(correction); }
     const codeHelp = element("p", "읽기 전용 코드입니다. 선택하여 복사할 수 있고 긴 줄은 코드 영역 안에서 스크롤합니다.");
     const code = element("div", "", "example-code"); code.style.height = `${Math.min(360, Math.max(140, example.code.split("\n").length * 24 + 24))}px`; detail.append(codeHelp, code); viewer = new LearningEditor(code, example.code, () => {}, true);
+    const sources = new Map<string, ExecutionSource>([["entry", { sourceId: "entry", fileName: example.suggestedFileName, code: example.code }]]);
+    for (const file of example.dataFiles ?? []) if (file.name.endsWith(".py")) sources.set(`module:${file.name}`, { sourceId: `module:${file.name}`, fileName: file.name, code: file.content });
+    let displayedSource = "entry";
+    const showSource = (id: string) => {
+      const source = sources.get(id); if (!source || displayedSource === id) return;
+      viewer?.destroy(); code.replaceChildren(); viewer = new LearningEditor(code, source.code, () => {}, true); displayedSource = id;
+      codeHelp.textContent = id === "entry" ? "읽기 전용 예제 코드입니다." : `${source.fileName} · 실행 중인 저장본 (읽기 전용 임시 데이터)`;
+    };
     if (example.inputGuide) detail.append(element("h3", "입력 안내"), element("p", "입력값에 따라 결과가 달라집니다. 순서대로 넣을 예시 입력: " + example.inputGuide.join(" → ")));
     if (example.topics.includes("random")) detail.append(element("p", "난수 결과는 실행할 때마다 달라질 수 있습니다."));
     if (example.topics.includes("datetime")) detail.append(element("p", "오늘 날짜를 사용하는 결과는 실행 날짜에 따라 달라집니다."));
@@ -81,24 +91,30 @@ export function mountExampleBrowser(parent: HTMLElement, onVisibility: (active: 
     }, "example-copy");
     controls.append(run, stop, editButton, copy);
     const live = element("p", "", "example-live"); announceExecution(live, "실행 준비");
+    const trace = createExecutionControls(controls, message => runner?.control(message), text => announceExecution(live, text));
     const output = element("pre", "", "example-output"); output.setAttribute("aria-label", "실제 실행 결과"); output.tabIndex = 0;
     const inputForm = element("form", "", "example-input-form"), inputLabel = element("label"), input = element("input"), submit = element("button", "입력"); submit.type = "submit";
     input.id = "example-answer"; input.autocomplete = "off"; inputLabel.htmlFor = input.id; inputForm.hidden = true; inputForm.append(inputLabel, input, submit);
     const canvas = element("canvas", "", "example-canvas"); canvas.hidden = true; canvas.setAttribute("role", "img"); canvas.setAttribute("aria-label", example.expectedGraphic ?? "예제의 거북이 그래픽 실행 결과");
     detail.append(controls, linkField, element("h3", "실제 실행 결과"), live, output, inputForm, canvas);
     graphics = new TurtleCanvasRenderer(canvas);
-    const setRunning = (running: boolean) => { run.disabled = running; stop.disabled = !running; output.setAttribute("aria-busy", String(running)); if (!running) inputForm.hidden = true; };
+    const setRunning = (running: boolean) => { run.disabled = running; stop.disabled = !running; output.setAttribute("aria-busy", String(running)); if (!running) { inputForm.hidden = true; trace.finish(); viewer?.setExecution(null); } };
     runner = new ExampleRunner(() => new Worker(new URL("../runtime/worker.ts", import.meta.url), { type: "module" }) as unknown as ExampleWorker, event => {
-      if (event.type === "output") output.textContent += event.text;
+      if (event.type === "source") sources.set(event.source.sourceId, event.source);
+      else if (event.type === "execution") { trace.receive(event); if (event.location && event.state !== "running") { showSource(event.location.sourceId); viewer?.setExecution(event.location); } else if (!event.location) viewer?.setExecution(null); }
+      else if (event.type === "output") output.textContent += event.text;
       else if (event.type === "graphics") { canvas.hidden = false; graphics?.apply(event.commands); }
-      else if (event.type === "input-request") { inputLabel.textContent = event.prompt || "입력값"; input.value = ""; inputForm.hidden = false; announceExecution(live, "입력을 기다리고 있습니다."); input.focus(); }
-      else if (event.type === "error") { const moduleError = event.error.fileName && event.error.fileName !== "main.py"; if (!moduleError) viewer?.setError(event.error.line); announceExecution(live, `${moduleError ? `${event.error.fileName}: ` : ""}${event.error.line}번째 줄: ${event.error.message}`, true); setRunning(false); }
-      else if (event.type === "complete" || event.type === "stopped") { announceExecution(live, event.type === "complete" ? "실행 완료" : "실행 중지"); setRunning(false); }
+      else if (event.type === "input-request") {
+        const expectedRun = runner?.runId;
+        inputForm.onsubmit = submitEvent => { submitEvent.preventDefault(); if (!expectedRun || runner?.runId !== expectedRun) return; const value = input.value; inputForm.hidden = true; announceExecution(live, "실행 중"); runner.input(value); };
+        inputLabel.textContent = event.prompt || "입력값"; input.value = ""; inputForm.hidden = false; input.focus();
+      }
+      else if (event.type === "error") { const moduleError = event.error.fileName && event.error.fileName !== example.suggestedFileName; showSource(moduleError ? `module:${event.error.fileName}` : "entry"); if (!moduleError || sources.has(`module:${event.error.fileName}`)) viewer?.setError(event.error.line); announceExecution(live, `${moduleError ? `${event.error.fileName}: ` : ""}${event.error.line}번째 줄: ${event.error.message}`, true); setRunning(false); }
+      else if (event.type === "complete" || event.type === "stopped") { announceExecution(live, event.type === "complete" ? "실행 완료" : "실행 중지"); setRunning(false); showSource("entry"); }
     });
-    inputForm.onsubmit = event => { event.preventDefault(); const value = input.value; inputForm.hidden = true; announceExecution(live, "실행 중"); runner?.input(value); };
     function start() {
-      output.textContent = ""; canvas.hidden = true; graphics?.reset(); viewer?.setError(null); inputForm.hidden = true; announceExecution(live, "실행 중"); setRunning(true);
-      try { runner?.start(example); } catch { announceExecution(live, "예제를 준비할 수 없습니다. 파일 크기와 이름을 확인해 주세요.", true); setRunning(false); }
+      showSource("entry"); output.textContent = ""; canvas.hidden = true; graphics?.reset(); viewer?.setError(null); inputForm.hidden = true; inputForm.onsubmit = null; announceExecution(live, "실행 중"); setRunning(true);
+      try { trace.start(); runner?.start(example, trace.mode, trace.speed); } catch { announceExecution(live, "예제를 준비할 수 없습니다. 파일 크기와 이름을 확인해 주세요.", true); setRunning(false); }
     }
     requestAnimationFrame(() => { if (title.isConnected) title.focus(); });
   }

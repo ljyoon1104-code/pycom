@@ -1,12 +1,17 @@
 import type { Expr, Statement, Target } from "./ast";
-import type { Bytecode, Instruction, UnpackPattern } from "./opcode";
+import { attachExecutionMetadata, type ExecutionSource, type ExecutionPoint, type Bytecode, type Instruction, type UnpackPattern } from "./opcode";
 import { CompilerError } from "./token";
 import { createEmission, point, type Loop } from "./emission";
 import { localNames } from "./local-names";
 
-export function compileProgram(nodes: Statement[], functionScopes: ReadonlySet<string>[] = []): Bytecode {
+export function compileProgram(nodes: Statement[], functionScopes: ReadonlySet<string>[] = [], executionSource?: ExecutionSource): Bytecode {
   const { instructions, emit, patch } = createEmission();
   const loops: Loop[] = [], exceptionNames: string[][] = [];
+  const points = new Map<number, ExecutionPoint>();
+  const locations = new Map<number, ExecutionPoint>();
+  let initialLoopGuards: Map<number, number> | undefined;
+  const locate = (token: { line: number; column: number }) => { if (executionSource) locations.set(instructions.length, { instruction: instructions.length, ...point(token) }); };
+  const mark = (token: { line: number; column: number }) => { if (executionSource) { locate(token); points.set(instructions.length, { instruction: instructions.length, ...point(token) }); } };
 
   const expression = (node: Expr): void => {
     switch (node.kind) {
@@ -88,7 +93,7 @@ export function compileProgram(nodes: Statement[], functionScopes: ReadonlySet<s
     validateNonlocals(node.body);
     const names = localNames(node.body, node.params.map(parameter => parameter.name), [...node.globals, ...(node.nonlocals ?? [])]);
     const defaults = node.params.filter(parameter => parameter.defaultValue); defaults.forEach(parameter => expression(parameter.defaultValue!));
-    const bytecode = compileProgram(node.body, [new Set(names), ...functionScopes]); bytecode.instructions.push({ op: "constant", value: null, ...point(node.token) }, { op: "return_value", ...point(node.token) });
+    const bytecode = compileProgram(node.body, [new Set(names), ...functionScopes], executionSource); bytecode.instructions.push({ op: "constant", value: null, ...point(node.token) }, { op: "return_value", ...point(node.token) });
     emit({ op: "make_function", name: node.name, params: node.params.map(parameter => ({ name: parameter.name, kind: parameter.kind, hasDefault: !!parameter.defaultValue })), localNames: localNames(node.body, node.params.map(parameter => parameter.name), [...node.globals, ...(node.nonlocals ?? [])]), globals: node.globals, nonlocals: node.nonlocals, bytecode, ...point(node.token) });
   };
   const prepareTarget = (target: Target) => { if (target.kind === "subscript") { expression(target.object); expression(target.index); } else if (target.kind === "attribute") expression(target.object); };
@@ -124,8 +129,11 @@ export function compileProgram(nodes: Statement[], functionScopes: ReadonlySet<s
   const targetNames = (target: Target) => target.kind === "name" ? [target.id] : target.kind === "unpack" ? (() => { const leaves = unpackLeaves(target); return leaves.every(leaf => leaf.kind === "name") ? leaves.map(leaf => (leaf as Extract<Target, { kind: "name" }>).id) : undefined; })() : undefined;
   const body = (statements: Statement[]) => statements.forEach(statement);
   const statement = (node: Statement): void => {
+    // Compound branches/loops mark their actual condition/iteration entry below.
+    // pass/global/nonlocal have no runtime instruction, and try is only region setup.
+    if (!["if", "while", "for", "try", "pass", "global", "nonlocal"].includes(node.kind)) mark(node.token);
     if (node.kind === "import") { emit({ op: "import_module", module: node.module, member: node.member, ...point(node.token) }); emit({ op: "store", name: node.binding, ...point(node.token) }); return; }
-    if (node.kind === "class") { const bytecode = compileProgram(node.body, functionScopes); if (node.parent) expression(node.parent); emit({ op: "make_class", name: node.name, bytecode, hasParent: !!node.parent, ...point(node.token) }); emit({ op: "store", name: node.name, ...point(node.token) }); return; }
+    if (node.kind === "class") { const bytecode = compileProgram(node.body, functionScopes, executionSource); if (node.parent) expression(node.parent); emit({ op: "make_class", name: node.name, bytecode, hasParent: !!node.parent, ...point(node.token) }); emit({ op: "store", name: node.name, ...point(node.token) }); return; }
     if (node.kind === "with") { expression(node.value); const setup = emit({ op: "enter_with", name: node.name, end: -1, ...point(node.token) }); body(node.body); emit({ op: "exit_with", ...point(node.token) }); (instructions[setup] as Extract<Instruction, { op: "enter_with" }>).end = instructions.length; return; }
     if (node.kind === "raise") { if (node.value) expression(node.value); emit({ op: "raise", hasValue: !!node.value, ...point(node.token) }); return; }
     if (node.kind === "delete") {
@@ -182,15 +190,20 @@ export function compileProgram(nodes: Statement[], functionScopes: ReadonlySet<s
     if (node.kind === "expression") { expression(node.expression); emit({ op: "pop", ...point(node.token) }); return; }
     if (node.kind === "if") {
       const exits: number[] = [];
-      node.branches.forEach((branch, index) => { expression(branch.condition); const next = emit({ op: "jump_if_false", target: -1, ...point(branch.token) }); body(branch.body); if (index < node.branches.length - 1 || node.otherwise) exits.push(emit({ op: "jump", target: -1, ...point(branch.token) })); patch(next, instructions.length); });
+      node.branches.forEach((branch, index) => { mark(branch.token); expression(branch.condition); const next = emit({ op: "jump_if_false", target: -1, ...point(branch.token) }); body(branch.body); if (index < node.branches.length - 1 || node.otherwise) exits.push(emit({ op: "jump", target: -1, ...point(branch.token) })); patch(next, instructions.length); });
       if (node.otherwise) body(node.otherwise); exits.forEach(exit => patch(exit, instructions.length)); return;
     }
     if (node.kind === "while") {
+      mark(node.token);
       const start = instructions.length; emit({ op: "loop_guard", ...point(node.token) }); expression(node.condition); const end = emit({ op: "jump_if_false", target: -1, ...point(node.token) }); const loop: Loop = { breaks: [], continueTarget: start, cleanupDepth: exceptionNames.length }; loops.push(loop); body(node.body); loops.pop(); emit({ op: "jump", target: start, ...point(node.token) }); patch(end, instructions.length); if (node.otherwise) body(node.otherwise); loop.breaks.forEach(index => patch(index, instructions.length)); return;
     }
     if (node.kind === "for") {
       const names = targetNames(node.target); if (!names) throw new CompilerError({ line: node.token.line, column: node.token.column, category: "syntax", message: "for 대상이 올바르지 않습니다." });
-      expression(node.iterable); emit({ op: "iter_prepare", ...point(node.token) }); const start = instructions.length; emit({ op: "loop_guard", ...point(node.token) }); const next = emit({ op: "iter_next", names, pattern: pattern(node.target), target: -1, ...point(node.token) }); const loop: Loop = { breaks: [], continueTarget: start, cleanupDepth: exceptionNames.length }; loops.push(loop); body(node.body); loops.pop(); emit({ op: "jump", target: start, ...point(node.token) });
+      // Stop before iterable evaluation too, but coalesce its first next-item guard.
+      const initial = instructions.length; mark(node.token);
+      expression(node.iterable); emit({ op: "iter_prepare", ...point(node.token) }); const start = instructions.length; mark(node.token);
+      if (executionSource) (initialLoopGuards ??= new Map()).set(initial, start);
+      emit({ op: "loop_guard", ...point(node.token) }); const next = emit({ op: "iter_next", names, pattern: pattern(node.target), target: -1, ...point(node.token) }); const loop: Loop = { breaks: [], continueTarget: start, cleanupDepth: exceptionNames.length }; loops.push(loop); body(node.body); loops.pop(); emit({ op: "jump", target: start, ...point(node.token) });
       patch(next, instructions.length); emit({ op: "pop", ...point(node.token) }); if (node.otherwise) body(node.otherwise);
       const end = emit({ op: "jump", target: -1, ...point(node.token) });
       loop.breaks.forEach(index => patch(index, instructions.length)); emit({ op: "pop", ...point(node.token) }); patch(end, instructions.length); return;
@@ -199,5 +212,6 @@ export function compileProgram(nodes: Statement[], functionScopes: ReadonlySet<s
     const jump = emit({ op: "jump", target: node.kind === "break" ? -1 : loop.continueTarget, ...point(node.token) }); if (node.kind === "break") loop.breaks.push(jump);
   };
   body(nodes);
-  return { instructions };
+  const code = { instructions };
+  return executionSource ? attachExecutionMetadata(code, { source: executionSource, points, locations, initialLoopGuards }) : code;
 }
