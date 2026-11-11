@@ -85,6 +85,13 @@ it('reports an ACK failure as an error even while the VM has not finished',()=>{
   const t=setup('f = open("a.txt", "w")\nf.write("before failure")\nwhile True:\n    pass');
   vi.runOnlyPendingTimers();t.ack(t.changes()[0].writeId!,false);expect(t.events.at(-1)).toMatchObject({type:'error',error:{message:expect.stringContaining('a.txt')}});expect(t.events.some(e=>e.type==='stopped')).toBe(false);
 });
+it('does not retry a rejected version when with cleanup closes its still-open handle',()=>{
+  const t=setup('with open("a.txt", "w") as f:\n    f.write("A")\n    while True:\n        pass');
+  vi.runOnlyPendingTimers();expect(t.changes()[0].content).toBe('A');t.ack(t.changes()[0].writeId!,false);
+  const unexpectedCommits=t.changes().slice(1);for(const change of unexpectedCommits)t.ack(change.writeId!,true);
+  expect(unexpectedCommits).toEqual([]);expect(t.changes()).toHaveLength(1);expect(t.events.at(-1)).toMatchObject({type:'error',error:{message:expect.stringContaining('a.txt')}});
+  vi.runAllTimers();expect(t.changes()).toHaveLength(1);
+});
 it('does not recursively retry a failed error checkpoint and preserves accepted pending changes',()=>{
   const original=TextEncoder.prototype.encode;
   vi.spyOn(TextEncoder.prototype,'encode').mockImplementation(function(this:TextEncoder,text){return text==='a.txt'||text==='b.txt'?{length:4999000} as ReturnType<TextEncoder['encode']>:original.call(this,text);});

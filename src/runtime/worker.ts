@@ -83,7 +83,10 @@ export function createWorkerRuntime(post: (message: FromWorker) => void) {
       if (timer === undefined && !inFlight) timer = setTimeout(flushFiles, 0);
     };
     const observeChange = (name: string, content: string, explicit = false) => {
-      if (checkpointFailed || !explicit && observed.has(name) && observed.get(name) === content) return;
+      // Cleanup after a rejected persistence request must not silently retry that
+      // same version and then report failure after a later retry has succeeded.
+      const same = observed.has(name) && observed.get(name) === content;
+      if (checkpointFailed || same && (!explicit || storageError !== undefined)) return;
       addFile(name, content); observed.set(name, content);
     };
     const checkpoint = () => {

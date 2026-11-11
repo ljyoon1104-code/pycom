@@ -20,8 +20,8 @@ async function ready(page) {
   assert.equal(await page.locator(".app-version").textContent(), version);
 }
 async function settled(page, example = false) {
-  const root = example ? ".example-controls" : ".topbar", stop = example ? ".example-stop" : ".stop", input = example ? ".example-input-form" : ".input-row";
-  await page.waitForFunction(({ root, stop, input }) => document.querySelector(stop)?.disabled || !document.querySelector(`${root} .trace-next`)?.disabled || [...document.querySelectorAll(input)].some(node => node.getClientRects().length), { root, stop, input });
+  const root = example ? ".example-controls" : ".topbar", stop = example ? ".example-stop" : ".stop", input = example ? ".example-input-form" : ".input-row", run = example ? ".example-run" : ".run";
+  await page.waitForFunction(({ root, stop, input, run }) => document.querySelector(stop)?.disabled && !document.querySelector(run)?.disabled || !document.querySelector(`${root} .trace-next`)?.disabled || [...document.querySelectorAll(input)].some(node => node.getClientRects().length), { root, stop, input, run });
 }
 async function point(page, example = false) {
   const selector = example ? ".example-code .execution-arrow" : ".workspace .execution-arrow";
