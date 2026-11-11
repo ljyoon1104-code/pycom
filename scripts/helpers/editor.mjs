@@ -21,7 +21,7 @@ export async function runCurrent(page, answers = []) {
     await input.fill(answer);
     await page.locator(".input-submit").click();
   }
-  await page.waitForFunction(() => document.querySelector(".stop")?.disabled === true);
+  await page.waitForFunction(() => document.querySelector(".stop")?.disabled === true && document.querySelector(".run")?.disabled === false);
   assert.equal(await page.locator(".run").isEnabled(), true);
   return page.locator(".console").textContent();
 }

@@ -34,7 +34,9 @@ async function point(page, example = false) {
 async function begin(page, code, mode = "step") {
   await replaceCode(page, code);
   await page.locator(`${controls} .execution-mode`).selectOption(mode);
-  await page.locator(".run").click(); await settled(page);
+  await page.locator(".run").click();
+  await page.locator('.workspace .execution-arrow').filter({visible:true}).first().waitFor();
+  await settled(page);
 }
 async function next(page, example = false) {
   await page.locator(`${example ? ".example-controls" : controls} .trace-next`).click(); await settled(page, example);
