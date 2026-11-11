@@ -1,3 +1,4 @@
+import { validVirtualFileName } from "../files/file-name";
 import type { Frame, Region, Transfer } from "./frames";
 import { ResumeExecution, VMFailure } from "./signals";
 import type { Bytecode, Instruction, UnpackPattern } from "../compiler/opcode";
@@ -401,7 +402,7 @@ export class VM {
     private openFile(i: Instruction, args: Value[], keywords: Record<string, Value>): void { const allowed = new Set(["mode", "encoding"]); if (Object.keys(keywords).some(name => !allowed.has(name)) || args.length < 1 || args.length > 2)
         return this.fail(i, "type", "open() 인수가 올바르지 않습니다."); const name = args[0]; const mode = args[1] ?? keywords.mode ?? "r", encoding = keywords.encoding; if (args.length === 2 && keywords.mode !== undefined)
         return this.fail(i, "type", "mode 인수가 중복되었습니다."); if (typeof name !== "string")
-        return this.fail(i, "type", "파일 이름은 문자열이어야 합니다."); if (!name || name.includes("..") || /[\\/:]/.test(name) || /^[a-zA-Z]:/.test(name) || /^https?:/i.test(name))
+        return this.fail(i, "type", "파일 이름은 문자열이어야 합니다."); if (!validVirtualFileName(name))
         return this.fail(i, "value", "앱의 파일 공간 밖에는 접근할 수 없습니다."); if (typeof mode !== "string" || !["r", "w", "a"].includes(mode))
         return this.fail(i, "value", "지원하지 않는 파일 모드입니다."); let normalizedEncoding = "utf-8"; if (encoding !== undefined) {
         if (typeof encoding !== "string")

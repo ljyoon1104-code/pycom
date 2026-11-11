@@ -1,9 +1,11 @@
 import { normalizeEncoding, type StoredEncoding } from "./encoding";
 import { appFile, MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, validFileName, validateFileSet, type AppFile } from "./storage";
+import { fileNameLabel } from "./file-name";
+import { backupJsonBytes, MAX_BACKUP_JSON_BYTES } from "./backup-budget";
+export { MAX_BACKUP_JSON_BYTES } from "./backup-budget";
 
 export const BACKUP_FORMAT = "python-learning-lab-backup";
 export const BACKUP_FORMAT_VERSION = 1;
-export const MAX_BACKUP_JSON_BYTES = 12_500_000;
 
 export type BackupFile = {
   name: string;
@@ -41,16 +43,15 @@ const record = (value: unknown): value is Record<string, unknown> => typeof valu
 const validIsoTime = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value) && Number.isFinite(Date.parse(value));
 const safeAppVersion = (value: unknown): string => typeof value === "string" && value.trim() && value.length <= 80 ? value : "알 수 없음";
 
-export const validBackupFileName = (name: string): boolean => {
-  if (!validFileName(name) || name.length > 180 || name !== name.trim()) return false;
-  if (/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u.test(name) || /[. ]$/.test(name)) return false;
-  if (!/\.(py|txt|csv)$/iu.test(name)) return false;
-  const stem = name.slice(0, name.lastIndexOf("."));
-  return !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu.test(stem);
-};
+export const validBackupFileName = validFileName;
 
 export function createWorkspaceBackup(files: readonly AppFile[], appVersion: string, now = new Date()): WorkspaceBackup {
-  validateFileSet(files);
+  const invalid = files.find(file => !validFileName(file.name));
+  if (invalid) {
+    const label = fileNameLabel(invalid.name);
+    throw new BackupValidationError("invalid-file", `${label} 파일 이름은 안전한 백업 형식에 넣을 수 없습니다. 기존 파일은 유지됩니다. 해당 파일을 열어 개별 내보내기로 보존한 뒤 안전한 이름으로 저장해 주세요.`);
+  }
+  validateFileSet(files, { backupBudget: false });
   if (!validIsoTime(now.toISOString())) throw new BackupValidationError("invalid-time", "백업 생성 시각이 올바르지 않습니다.");
   const names = new Set<string>();
   const backupFiles = files
@@ -63,10 +64,17 @@ export function createWorkspaceBackup(files: readonly AppFile[], appVersion: str
       if (!Number.isInteger(file.byteSize) || file.byteSize < 0 || file.byteSize > MAX_FILE_BYTES) throw new BackupValidationError("invalid-size", "파일 원본 크기 정보가 올바르지 않습니다.");
       return { name: file.name, content: file.content, encoding: file.encoding, originalByteSize: file.byteSize, updatedAt: new Date(file.updatedAt).toISOString() };
     });
-  return { format: BACKUP_FORMAT, formatVersion: BACKUP_FORMAT_VERSION, appVersion: safeAppVersion(appVersion), createdAt: now.toISOString(), files: backupFiles };
+  const backup: WorkspaceBackup = { format: BACKUP_FORMAT, formatVersion: BACKUP_FORMAT_VERSION, appVersion: safeAppVersion(appVersion), createdAt: now.toISOString(), files: backupFiles };
+  assertBackupSize(backup); return backup;
 }
 
-export const serializeWorkspaceBackup = (backup: WorkspaceBackup): string => `${JSON.stringify(backup, null, 2)}\n`;
+function assertBackupSize(backup: WorkspaceBackup): void {
+  if (backupJsonBytes(backup) > MAX_BACKUP_JSON_BYTES) {
+    const name = backup.files.length ? `${fileNameLabel(backup.files[0].name)} 등 ` : "";
+    throw new BackupValidationError("json-limit", `${name}전체 백업이 JSON 이스케이프를 포함한 12.5MB 한도를 넘습니다. 기존 파일은 유지됩니다. 파일을 열어 개별 내보내기로 보존해 주세요.`);
+  }
+}
+export const serializeWorkspaceBackup = (backup: WorkspaceBackup): string => { assertBackupSize(backup); return `${JSON.stringify(backup, null, 2)}\n`; };
 
 const validationError = (code: string, message: string): never => { throw new BackupValidationError(code, message); };
 
@@ -152,6 +160,7 @@ export function buildRestoreSet(existing: readonly AppFile[], backup: WorkspaceB
     if (code === "count-limit") validationError(code, `복원 후 파일 수는 ${MAX_FILES}개를 넘을 수 없습니다.`);
     if (code === "file-limit") validationError(code, "복원할 파일 하나가 허용 크기를 넘습니다.");
     if (code === "total-limit") validationError(code, "복원 후 전체 파일 크기가 허용 한도를 넘습니다.");
+    if (code === "backup-limit") validationError(code, "복원 후 백업 JSON 크기는 이스케이프를 포함해 12.5MB를 넘을 수 없습니다. 기존 파일은 유지됩니다.");
     validationError("restore-invalid", "복원할 파일 구성이 올바르지 않습니다.");
   }
   return files.sort((a, b) => a.name.localeCompare(b.name, "ko"));

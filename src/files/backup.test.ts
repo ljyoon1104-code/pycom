@@ -57,9 +57,9 @@ describe("전체 백업 입력 검증", () => {
   it("중복 파일명을 거부한다", () => expectCode(changed(backup(), raw => { const first = (raw.files as unknown[])[0]; raw.files = [first, first]; }), "duplicate-name"));
   it("상위 경로 파일명을 거부한다", () => expectCode(changed(backup(), raw => { (raw.files as Record<string, unknown>[])[0].name = "../main.py"; }), "invalid-name"));
   it("절대 경로 파일명을 거부한다", () => expectCode(changed(backup(), raw => { (raw.files as Record<string, unknown>[])[0].name = "C:\\main.py"; }), "invalid-name"));
-  it("허용하지 않는 파일 유형을 거부한다", () => expectCode(changed(backup(), raw => { (raw.files as Record<string, unknown>[])[0].name = "photo.png"; }), "invalid-name"));
+  it("가상 파일의 확장자와 관계없이 텍스트 내용을 보존한다", () => expect(parseWorkspaceBackup(changed(backup(), raw => { (raw.files as Record<string, unknown>[])[0].name = "photo.png"; })).files[0].name).toBe("photo.png"));
   it("양방향 제어 문자를 넣은 위장 파일명을 거부한다", () => expect(validBackupFileName("report\u202Eyp.exe")).toBe(false));
-  it("Windows 장치 예약 파일명을 거부한다", () => expect(validBackupFileName("CON.py")).toBe(false));
+  it("Windows 장치 이름도 경로가 아닌 안전한 가상 파일명으로 허용한다", () => expect(validBackupFileName("CON.py")).toBe(true));
   it("문자열이 아닌 내용을 거부한다", () => expectCode(changed(backup(), raw => { (raw.files as Record<string, unknown>[])[0].content = { code: "secret" }; }), "invalid-content"));
   it("파일 하나의 크기 제한을 검사한다", () => expectCode(changed(backup(), raw => { (raw.files as Record<string, unknown>[])[0].content = "가".repeat(Math.ceil(MAX_FILE_BYTES / 3) + 1); }), "file-limit"));
   it("전체 내용 크기 제한을 검사한다", () => expectCode(changed(backup(), raw => { raw.files = Array.from({ length: 11 }, (_, index) => ({ name: `large-${index}.txt`, content: "x".repeat(950_000), encoding: "utf-8", originalByteSize: 950_000, updatedAt: now.toISOString() })); }), "total-limit"));

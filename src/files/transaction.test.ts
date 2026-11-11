@@ -4,10 +4,11 @@ import { appFile, IndexedDbFileStore } from "./storage";
 afterEach(() => vi.unstubAllGlobals());
 function database() {
   let success: (() => void) | undefined, complete: (() => void) | undefined, abort: (() => void) | undefined;
-  const tx = { oncomplete: null as (() => void) | null, onabort: null as (() => void) | null, onerror: null, error: null, objectStore: () => ({ put: () => request, delete: () => request, getAll: () => request }), abort: () => tx.onabort?.() };
   const request = { result: undefined as unknown, onsuccess: null as (() => void) | null };
+  const read = { result: [], onsuccess: null as (() => void) | null };
+  const tx = { oncomplete: null as (() => void) | null, onabort: null as (() => void) | null, onerror: null, error: null, objectStore: () => ({ put: () => request, delete: () => request, getAll: () => read }), abort: () => tx.onabort?.() };
   vi.stubGlobal("indexedDB", { open: () => {
-    const open = { result: { transaction: () => { success = () => request.onsuccess?.(); complete = () => tx.oncomplete?.(); abort = () => tx.onabort?.(); return tx; } }, onsuccess: null as (() => void) | null };
+    const open = { result: { transaction: () => { success = () => { read.onsuccess?.(); request.onsuccess?.(); }; complete = () => tx.oncomplete?.(); abort = () => tx.onabort?.(); return tx; } }, onsuccess: null as (() => void) | null };
     queueMicrotask(() => open.onsuccess?.()); return open;
   } });
   return { ready: () => vi.waitFor(() => expect(success).toBeDefined()), success: () => success!(), complete: () => complete!(), abort: () => abort!() };
