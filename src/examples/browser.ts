@@ -110,7 +110,7 @@ export function mountExampleBrowser(parent: HTMLElement, onVisibility: (active: 
         inputLabel.textContent = event.prompt || "입력값"; input.value = ""; inputForm.hidden = false; input.focus();
       }
       else if (event.type === "error") { const moduleError = event.error.fileName && event.error.fileName !== example.suggestedFileName; showSource(moduleError ? `module:${event.error.fileName}` : "entry"); if (!moduleError || sources.has(`module:${event.error.fileName}`)) viewer?.setError(event.error.line); announceExecution(live, `${moduleError ? `${event.error.fileName}: ` : ""}${event.error.line}번째 줄: ${event.error.message}`, true); setRunning(false); }
-      else if (event.type === "complete" || event.type === "stopped") { announceExecution(live, event.type === "complete" ? "실행 완료" : "실행 중지"); setRunning(false); showSource("entry"); }
+      else if (event.type === "complete" || event.type === "stopped") { announceExecution(live, event.type === "complete" ? "실행 완료" : event.forced ? "응답이 없어 예제 실행을 강제 종료했습니다. 예제의 임시 파일은 기기에 저장되지 않습니다." : "실행 중지"); setRunning(false); showSource("entry"); }
     });
     function start() {
       showSource("entry"); output.textContent = ""; canvas.hidden = true; graphics?.reset(); viewer?.setError(null); inputForm.hidden = true; inputForm.onsubmit = null; announceExecution(live, "실행 중"); setRunning(true);

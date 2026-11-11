@@ -116,3 +116,4 @@
   .document-bar { flex-wrap: wrap; }
   .document-tabs { flex-basis: 100%; }
 }
+.file-save-status { margin: 8px 12px; color: #ffe49a; overflow-wrap: anywhere; }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ExecutionSession, type ExecutionWorker } from "./execution-session";
+import { ExecutionSession, STOP_GRACE_MS, type ExecutionWorker } from "./execution-session";
 import type { FromWorker, ToWorker } from "../runtime/protocol";
 
 class FakeWorker implements ExecutionWorker {
@@ -11,8 +11,12 @@ class FakeWorker implements ExecutionWorker {
   terminate() { this.terminated = true; }
   emit(message: FromWorker) { this.onmessage?.({ data: message } as MessageEvent<FromWorker>); }
 }
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe("shared execution lifetime", () => {
+  it("gives a responsive worker time to stop without forcing it", async () => { vi.useFakeTimers(); const worker = new FakeWorker(), session = new ExecutionSession(() => worker); session.onmessage = vi.fn(); session.stop(); expect(worker.messages).toEqual([{type:'stop',runId:session.runId}]); worker.emit({type:'stopped',runId:session.runId}); await session.settled; vi.advanceTimersByTime(STOP_GRACE_MS); expect(worker.terminated).toBe(false); expect(session.onmessage).toHaveBeenCalledWith(expect.objectContaining({data:{type:'stopped',runId:session.runId}})); });
+  it("terminates an unresponsive worker at the explicit deadline and ignores captured late input", async () => { vi.useFakeTimers(); const worker = new FakeWorker(), session = new ExecutionSession(() => worker), captured = worker.onmessage!; const events:FromWorker[]=[]; session.onmessage=e=>events.push(e.data); session.stop(); vi.advanceTimersByTime(STOP_GRACE_MS-1); expect(worker.terminated).toBe(false); session.postMessage({type:'input',value:'late'}); expect(worker.messages).toHaveLength(1); vi.advanceTimersByTime(1); await session.settled; expect(worker.terminated).toBe(true); expect(events).toEqual([{type:'stopped',forced:true,runId:session.runId}]); captured({data:{type:'input-request',prompt:'late',runId:session.runId}} as MessageEvent<FromWorker>); expect(events).toHaveLength(1); });
+  it("accepts persistence acknowledgements while stopping but not execution controls", () => { vi.useFakeTimers(); const worker = new FakeWorker(), session = new ExecutionSession(() => worker); session.stop(); session.postMessage({type:'next',pauseId:1}); session.postMessage({type:'file-ack',writeId:4,ok:true}); expect(worker.messages).toEqual([{type:'stop',runId:session.runId},{type:'file-ack',writeId:4,ok:true,runId:session.runId}]); session.terminate(); vi.runAllTimers(); expect(worker.terminated).toBe(true); });
+  it("a fresh execution still works after forced termination", () => { vi.useFakeTimers(); const first = new FakeWorker(), a = new ExecutionSession(()=>first); a.stop(); vi.advanceTimersByTime(STOP_GRACE_MS); const second = new FakeWorker(), b = new ExecutionSession(()=>second), events:FromWorker[]=[]; b.onmessage=e=>events.push(e.data); b.postMessage({type:'run',code:'print(1)',files:[]}); second.emit({type:'complete',runId:b.runId}); expect(events).toEqual([{type:'complete',runId:b.runId}]); expect(a.runId).not.toBe(b.runId); });
   it("also creates distinct run IDs on classroom HTTP without randomUUID", () => { vi.stubGlobal('crypto', {}); const a = new ExecutionSession(() => new FakeWorker()), b = new ExecutionSession(() => new FakeWorker()); expect(a.runId).toMatch(/^run-/); expect(a.runId).not.toBe(b.runId); });
   it("allocates a unique identifier per run", () => { const a = new ExecutionSession(() => new FakeWorker()), b = new ExecutionSession(() => new FakeWorker()); expect(a.runId).not.toBe(b.runId); });
   it("tags every outgoing command", () => { const worker = new FakeWorker(), session = new ExecutionSession(() => worker); session.postMessage({ type: "next", pauseId: 2 }); expect(worker.messages).toEqual([{ type: "next", pauseId: 2, runId: session.runId }]); });

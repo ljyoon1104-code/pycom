@@ -16,7 +16,8 @@ export class ExampleRunner {
     validateFileSet(files);
     const worker = new ExecutionSession(this.create); this.worker = worker;
     worker.onmessage = ({ data }) => {
-      if (this.worker !== worker || data.type === "file-change") return;
+      if (this.worker !== worker) return;
+      if (data.type === "file-change") { if (data.writeId !== undefined) worker.postMessage({ type: "file-ack", writeId: data.writeId, ok: true }); return; }
       if (["error", "complete", "stopped"].includes(data.type)) this.dispose();
       const { runId: _runId, ...event } = data; this.receive(event);
     };
@@ -29,7 +30,7 @@ export class ExampleRunner {
   }
   control(message: WorkerRequest): void { this.worker?.postMessage(message); }
   input(value: string): void { this.worker?.postMessage({ type: "input", value }); }
-  stop(): void { if (this.worker) { this.dispose(); this.receive({ type: "stopped" }); } }
+  stop(): void { this.worker?.stop(); }
   dispose(): void {
     if (this.worker) { this.worker.onmessage = null; this.worker.onerror = null; this.worker.terminate(); this.worker = undefined; }
   }

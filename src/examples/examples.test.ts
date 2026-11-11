@@ -78,7 +78,7 @@ describe("hash routing", () => {
 });
 class FakeWorker implements ExampleWorker {
   onmessage: ExampleWorker["onmessage"] = null; onerror: ExampleWorker["onerror"] = null;
-  postMessage = vi.fn<(message: ToWorker) => void>(); terminate = vi.fn();
+  postMessage = vi.fn<(message: ToWorker) => void>(message => { if (message.type === "stop") this.emit({type:"stopped"}); }); terminate = vi.fn();
   emit(event: WorkerEvent) { const data = { ...event, runId: this.postMessage.mock.calls[0][0].runId }; this.onmessage?.({ data } as MessageEvent<FromWorker>); }
 }
 describe("isolated Worker lifecycle", () => {
@@ -88,6 +88,12 @@ describe("isolated Worker lifecycle", () => {
     const { workers, events, runner } = setup(); runner.start(data);
     expect(workers[0].postMessage).toHaveBeenCalledWith({ type: "run", code: data.code, fileName: data.suggestedFileName, mode: "normal", speed: 500, files: data.dataFiles, runId: expect.any(String) });
     workers[0].emit({ type: "file-change", name: "student.py", content: "changed" }); expect(events).toEqual([]);
+  });
+  it("acknowledges isolated file changes without forwarding them to student storage", () => {
+    const {workers,events,runner}=setup();runner.start(data);
+    workers[0].emit({type:"file-change",name:"student.py",content:"temporary",writeId:7});
+    expect(events).toEqual([]);
+    expect(workers[0].postMessage).toHaveBeenLastCalledWith({type:"file-ack",writeId:7,ok:true,runId:runner.runId});
   });
   it.each(["complete", "stopped"] as const)("discards worker and files on %s", type => {
     const { workers, runner, events } = setup(); runner.start(data); workers[0].emit({ type });

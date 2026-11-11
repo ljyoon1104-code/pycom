@@ -3,6 +3,8 @@ import { Documents, DOCUMENT_SESSION_KEY, contentOf, isDirty, type EditorDocumen
 import { LearningEditor } from "./editor";
 import type { EditorExecutionPoint } from "./execution-decoration";
 import { appFile, checkedPut, type AppFile, type FileStore } from "../files/storage";
+import { storageFailureMessage } from "../files/storage-message";
+import { fileNameLabel } from "../files/file-name";
 
 type Choice = { value: string; label: string };
 interface Options {
@@ -153,7 +155,8 @@ export class DocumentTabs {
       this.options.files().set(file.name, file); this.documents.saved(snapshot);
       this.options.message(`${file.name} 파일을 저장했습니다.\n`); this.render(); return true;
     } catch (error) {
-      this.options.message(error instanceof Error && /파일 이름|다른 탭|저장하는 중/.test(error.message) ? error.message : `‘${doc.fileName}’ 파일을 저장할 수 없습니다. 변경 내용은 탭에 유지됩니다.`, true);
+      const cause=error instanceof Error && ['count-limit','file-limit','total-limit','backup-limit','invalid-name'].includes(error.message) ? ` ${storageFailureMessage(error)}` : '';
+      this.options.message(error instanceof Error && /파일 이름|다른 탭|저장하는 중/.test(error.message) ? error.message : `${fileNameLabel(doc.fileName)} 파일을 저장할 수 없습니다. 변경 내용은 탭에 유지됩니다.${cause}`, true);
       return false;
     } finally { this.pending.delete(id); if (reserved) this.reservedNames.delete(reserved); this.render(); }
   }
