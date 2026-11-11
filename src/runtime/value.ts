@@ -1,4 +1,5 @@
 import { isFloat, floatText, numeric, numberValue, type FloatValue } from "./numbers-v2";
+import { TextBudget } from "./resource-limits";
 export interface RangeValue { kind: "range"; start: number; stop: number; step: number; }
 export type CallRequest = { i: import("../compiler/opcode").Instruction; callable: Value; args: Value[] };
 export type RuntimeTask<T> = Generator<CallRequest, T, Value>;
@@ -62,21 +63,42 @@ export const equal = (left: Value, right: Value): boolean =>
 /** Container lookups test identity before equality (NaN is not equal to itself). */
 export const elementEqual = (left: Value, right: Value): boolean => left === right || equal(left, right);
 export const keyOK = (value: Value): boolean => isTuple(value) ? value.items.every(keyOK) : !isSet(value) && !isModule(value) && !isList(value) && !isDict(value) && !isSlice(value) && !isIterator(value) && !isMap(value) && !isBuiltin(value) && !isFunction(value) && !isClass(value) && !isInstance(value) && !isBoundMethod(value) && !isFile(value) && !isTurtle(value) && !isTurtleMethod(value) && !isErrorType(value) && !isException(value) && !isAttr(value);
-function quoteString(value: string): string {
-  let result = "'";
+function quoteString(value: string, write: (part: string) => void): void {
+  write("'");
   for (const character of value) {
     const code = character.codePointAt(0)!;
-    if (character === "'" || character === "\\") result += "\\" + character;
-    else if (character === "\n") result += "\\n";
-    else if (character === "\r") result += "\\r";
-    else if (character === "\t") result += "\\t";
-    else if (code < 32 || (code >= 127 && code <= 160)) result += "\\x" + code.toString(16).padStart(2, "0");
-    else if (code >= 0xd800 && code <= 0xdfff) result += "\\u" + code.toString(16).padStart(4, "0");
-    else result += character;
+    if (character === "'" || character === "\\") write("\\" + character);
+    else if (character === "\n") write("\\n");
+    else if (character === "\r") write("\\r");
+    else if (character === "\t") write("\\t");
+    else if (code < 32 || (code >= 127 && code <= 160)) write("\\x" + code.toString(16).padStart(2, "0"));
+    else if (code >= 0xd800 && code <= 0xdfff) write("\\u" + code.toString(16).padStart(4, "0"));
+    else write(character);
   }
-  return result + "'";
+  write("'");
 }
-export const repr = (value: Value): string => isFloat(value) ? floatText(value.value) : isSet(value) ? value.items.length ? `{${value.items.map(repr).join(", ")}}` : "set()" : value === null ? "None" : typeof value === "number" ? (Number.isFinite(value) ? String(value) : floatText(value)) : typeof value === "boolean" ? (value ? "True" : "False") : isDate(value) ? dateISO(value) : isModule(value) ? `<module '${value.name}'>` : typeof value === "string" ? quoteString(value) : isList(value) ? `[${value.items.map(repr).join(", ")}]` : isTuple(value) ? `(${value.items.map(repr).join(", ")}${value.items.length === 1 ? "," : ""})` : isDict(value) ? `{${value.entries.map(entry => `${repr(entry.key)}: ${repr(entry.value)}`).join(", ")}}` : isRange(value) ? `range(${value.start}, ${value.stop}, ${value.step})` : isBuiltin(value) ? `<built-in function ${value.name}>` : isTurtleMethod(value) ? `<built-in method turtle.${value.name}>` : isFunction(value) ? `<function ${value.name}>` : isException(value) ? value.message : isErrorType(value) ? `<class '${value.name}'>` : isFile(value) ? `<파일 '${value.name}'>` : isTurtle(value) ? "<turtle.Turtle 객체>" : isInstance(value) ? `<${value.classValue.name} 객체>` : isClass(value) ? `<class '${value.name}'>` : isMap(value) ? "<map object>" : "<값>";
-export const printable = (value: Value) => typeof value === "string" ? value : repr(value);
+export function repr(value: Value, budget = new TextBudget()): string {
+  const parts: string[] = [], active = new Set<object>();
+  const write = (part: string) => { budget.consume(part.length); parts.push(part); };
+  const render = (item: Value, depth: number): void => {
+    budget.visit(depth);
+    if (isList(item) || isTuple(item) || isSet(item) || isDict(item)) {
+      const open = isList(item) ? "[" : isTuple(item) ? "(" : "{", close = isList(item) ? "]" : isTuple(item) ? ")" : "}";
+      if (active.has(item)) { write(`${open}...${close}`); return; }
+      if (isSet(item) && item.items.length === 0) { write("set()"); return; }
+      active.add(item); write(open);
+      if (isDict(item)) item.entries.forEach((entry, index) => { if (index) write(", "); render(entry.key, depth + 1); write(": "); render(entry.value, depth + 1); });
+      else { item.items.forEach((child, index) => { if (index) write(", "); render(child, depth + 1); }); if (isTuple(item) && item.items.length === 1) write(","); }
+      write(close); active.delete(item); return;
+    }
+    if (typeof item === "string") { quoteString(item, write); return; }
+    write(isFloat(item) ? floatText(item.value) : item === null ? "None" : typeof item === "number" ? (Number.isFinite(item) ? String(item) : floatText(item)) : typeof item === "boolean" ? (item ? "True" : "False") : isDate(item) ? dateISO(item) : isModule(item) ? `<module '${item.name}'>` : isRange(item) ? `range(${item.start}, ${item.stop}, ${item.step})` : isBuiltin(item) ? `<built-in function ${item.name}>` : isTurtleMethod(item) ? `<built-in method turtle.${item.name}>` : isFunction(item) ? `<function ${item.name}>` : isException(item) ? item.message : isErrorType(item) ? `<class '${item.name}'>` : isFile(item) ? `<파일 '${item.name}'>` : isTurtle(item) ? "<turtle.Turtle 객체>" : isInstance(item) ? `<${item.classValue.name} 객체>` : isClass(item) ? `<class '${item.name}'>` : isMap(item) ? "<map object>" : "<값>");
+  };
+  render(value, 0); return parts.join("");
+}
+export function printable(value: Value, budget = new TextBudget()): string {
+  if (typeof value === "string") { budget.visit(0); budget.consume(value.length); return value; }
+  return repr(value, budget);
+}
 export const typeName = (value: Value): string => isFloat(value) ? "float" : isSet(value) ? "set" : value === null ? "NoneType" : typeof value === "number" ? (Number.isInteger(value) ? "int" : "float") : typeof value === "string" ? "str" : typeof value === "boolean" ? "bool" : isDate(value) ? "date" : isTurtle(value) ? "Turtle" : isModule(value) ? "module" : isList(value) ? "list" : isTuple(value) ? "tuple" : isDict(value) ? "dict" : isRange(value) ? "range" : isMap(value) ? "map" : isBuiltin(value) || isTurtleMethod(value) || isFunction(value) ? "function" : "object";
 export const truthy = (value: Value) => isRange(value) ? (value.step > 0 ? value.start < value.stop : value.start > value.stop) : isFloat(value) ? value.value !== 0 : value !== null && value !== false && value !== 0 && value !== "" && (!isSet(value) || value.items.length > 0) && (!isList(value) || value.items.length > 0) && (!isTuple(value) || value.items.length > 0) && (!isDict(value) || value.entries.length > 0);

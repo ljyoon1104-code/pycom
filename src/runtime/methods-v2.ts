@@ -1,6 +1,7 @@
 import { CollectionError, CollectionLimitError, MAX_COLLECTION_SIZE, hashable } from "./collections-v2";
 import { elementEqual as equal, isDict, isTuple, type DictValue, type ListValue, type Value } from "./value";
 import type { RuntimeTask } from "./value";
+import { checkTextLength } from "./resource-limits";
 const error = (message: string, type: "TypeError" | "ValueError" | "KeyError" = "TypeError"): never => { throw new CollectionError(type, message); };
 const count = (name: string, args: Value[], min: number, max = min) => { if (args.length < min || args.length > max)
     error(`${name}() 인수 개수가 올바르지 않습니다.`); };
@@ -8,8 +9,7 @@ const integer = (value: Value): number => typeof value === "boolean" ? Number(va
 const string = (value: Value): string => typeof value === "string" ? value : error("문자열이 필요합니다.");
 const size = (length: number) => { if (length > MAX_COLLECTION_SIZE)
     throw new CollectionLimitError("컬렉션 크기 제한을 초과했습니다."); };
-const textSize = (length: number) => { if (length > 100000)
-    throw new CollectionLimitError("문자열 크기 제한을 초과했습니다."); };
+const textSize = checkTextLength;
 const bound = (value: Value | undefined, length: number, fallback: number): number => value === undefined ? fallback : Math.max(0, integer(value) < 0 ? length + integer(value) : integer(value));
 const whitespace = (char: string) => /[\p{White_Space}\u001c-\u001f]/u.test(char);
 export const STRING_METHODS = new Set(["join", "find", "rfind", "index", "count", "startswith", "endswith", "lower", "upper", "capitalize", "title", "isdigit", "isalpha", "isalnum", "isspace", "lstrip", "rstrip", "strip", "split", "rsplit", "replace", "center", "ljust", "rjust", "zfill"]);

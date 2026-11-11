@@ -1,10 +1,11 @@
 import { elementEqual as equal, keyOK, type SetValue, type SliceValue, type Value } from "./value";
 import type { RuntimeTask } from "./value";
+import { RESOURCE_LIMITS, ResourceLimitError } from "./resource-limits";
 export class CollectionError extends Error {
   constructor(readonly pythonType: "TypeError" | "ValueError" | "KeyError" | "IndexError" | "ZeroDivisionError" | "OverflowError", message: string) { super(message); }
 }
-export class CollectionLimitError extends Error {}
-export const MAX_COLLECTION_SIZE = 10000;
+export class CollectionLimitError extends ResourceLimitError {}
+export const MAX_COLLECTION_SIZE = RESOURCE_LIMITS.collectionItems;
 export function hashable(value: Value): void { if (!keyOK(value))
     throw new CollectionError("TypeError", "변경 가능한 값은 집합 원소나 딕셔너리 키가 될 수 없습니다."); }
 export function addSet(set: SetValue, value: Value): void {

@@ -1,11 +1,12 @@
-import { validVirtualFileName } from "../files/file-name";
 import type { Frame, Region, Transfer } from "./frames";
+import { validVirtualFileName } from "../files/file-name";
 import { ResumeExecution, VMFailure } from "./signals";
 import type { Bytecode, Instruction, UnpackPattern } from "../compiler/opcode";
-import { executionMetadataOf, type ExecutionSource } from "../compiler/opcode";
+import { executionMetadataOf, fstringBoundariesOf, fstringOwnerOf, type FStringAllocationGroup, type ExecutionSource } from "../compiler/opcode";
 import { ExecutionControl, type ExecutionMode, type ExecutionSpeed, type ExecutionLocation, type ExecutionUpdate } from "./execution-control";
 import type { RuntimeTask, CallRequest } from "./value";
 import { mapTasks } from "./tasks";
+import { RESOURCE_LIMITS, ResourceLimitError, TextBudget, checkTextLength } from "./resource-limits";
 import type { UserModuleState } from "./user-modules";
 import { compile } from "../compiler/compiler";
 import { CompilerError } from "../compiler/token";
@@ -14,7 +15,7 @@ import { elementEqual, isSuper, isErrorType, classAttribute, subclass } from "./
 import { SCALAR_BUILTINS, scalarBuiltin } from "./builtins-v2";
 import { STRING_METHODS, LIST_METHODS, stringMethod, listMethod, dictMethod } from "./methods-v2";
 import { isSet, type LexicalScope } from "./value";
-import { CollectionError, CollectionLimitError, MAX_COLLECTION_SIZE, hashable, makeSet, setBinary, setMethod, sliceIndices } from "./collections-v2";
+import { CollectionError, MAX_COLLECTION_SIZE, hashable, makeSet, setBinary, setMethod, sliceIndices } from "./collections-v2";
 import type { StudentError } from "../compiler/token";
 import { BuiltinModules, ModuleError, type ModuleOptions } from "./modules";
 import { GraphicsLimitError, TurtleError, type TurtleGraphicsCommand } from "./turtle";
@@ -52,7 +53,7 @@ export interface VMOptions extends ModuleOptions {
     executionSpeed?: ExecutionSpeed;
     inputLocation?: boolean;
 }
-const MAX_OUTPUT = 100000, MAX_ITERATIONS = 10000, ASYNC_BATCH = 400, GRAPHICS_BATCH = 48;
+const MAX_OUTPUT = RESOURCE_LIMITS.stringCharacters, MAX_ITERATIONS = 10000, ASYNC_BATCH = 400, GRAPHICS_BATCH = 48;
 export const MAX_CALL_DEPTH = 128;
 const MAX_INSTRUCTIONS = 1000000;
 const BUILTINS = new Set(["int", "float", "str", "bool", "len", "list", "tuple", "dict", "set", "sum", "min", "max", "map", "input", "print", "range", "type", "open", "sorted", "enumerate", "zip", "reversed", "any", "all"]);
@@ -73,8 +74,10 @@ export class VM {
     private readonly executionControl?: ExecutionControl;
     // Trace-only: a recursive call may evaluate the same for header before its caller resumes.
     private initialLoopGuards?: WeakMap<Bytecode, Map<number, Set<number>>>;
+    private fstringBudgets?: WeakMap<Value[], Map<FStringAllocationGroup, TextBudget>>;
     private readonly announcedSources = new Set<string>();
     private batchTimer?: ReturnType<typeof setTimeout>;
+    private transportHeld = false;
     // Builtins may suspend while a Python callback uses ordinary VM frames.
     // Keep their iterator/mutation progress in generators rather than replaying expressions.
     private operations: {
@@ -96,6 +99,14 @@ export class VM {
     advance(pauseId: number): void { this.executionControl?.next(pauseId); }
     follow(pauseId: number): void { this.executionControl?.follow(pauseId); }
     setSpeed(speed: ExecutionSpeed): void { this.executionControl?.setSpeed(speed); }
+    /** Unicode VFS state, including writes on handles not closed yet. */
+    fileSnapshot(): ReadonlyMap<string, string> { return new Map(this.files); }
+    holdTransport(): void { this.transportHeld = true; this.executionControl?.holdTransport(); if (this.batchTimer !== undefined) clearTimeout(this.batchTimer); this.batchTimer = undefined; }
+    releaseTransport(): void {
+        if (!this.transportHeld) return;
+        this.transportHeld = false; this.executionControl?.releaseTransport();
+        if (!this.waiting && !this.stopped && !this.finished && !this.executionControl?.waiting) this.asyncMode ? this.executeAsync() : this.execute();
+    }
     private source(source: ExecutionSource): void { if (!this.announcedSources.has(source.sourceId)) {
         this.announcedSources.add(source.sourceId);
         this.notify({ type: "source", source });
@@ -114,7 +125,7 @@ export class VM {
         }
         return { line: i.line, column: i.column, instruction: this.pc - 1, sourceId: `module:${this.currentFile ?? "main.py"}`, fileName: this.currentFile ?? "main.py" };
     }
-    private clearExecution(): void { this.operations = []; this.initialLoopGuards = undefined; this.executionControl?.stop(); if (this.batchTimer !== undefined)
+    private clearExecution(): void { this.operations = []; this.initialLoopGuards = undefined; this.fstringBudgets = undefined; this.executionControl?.stop(); if (this.batchTimer !== undefined)
         clearTimeout(this.batchTimer); this.batchTimer = undefined; }
     private startOperation(task: RuntimeTask<void>, i: Instruction): void {
         const depth = this.frames.length, result = task.next();
@@ -158,7 +169,7 @@ export class VM {
         return action();
     }
     catch (error) {
-        if (error instanceof GraphicsLimitError || error instanceof CollectionLimitError)
+        if (error instanceof GraphicsLimitError || error instanceof ResourceLimitError)
             return this.systemFail(i, error.message);
         if (error instanceof TurtleError)
             throw new VMFailure({ line: i.line, column: i.column, category: error.pythonType === "TypeError" ? "type" : error.pythonType === "AttributeError" ? "name" : "value", message: error.message }, error.pythonType);
@@ -174,7 +185,7 @@ export class VM {
   executeAsync(): void { this.asyncMode = true; this.run(ASYNC_BATCH); }
     private run(budget: number): void {
         let count = 0;
-        while (!this.waiting && !this.stopped && !this.finished && count++ < budget) {
+        while (!this.transportHeld && !this.waiting && !this.stopped && !this.finished && count++ < budget) {
             try {
                 if (this.pc >= this.bytecode.instructions.length) {
                     if (this.frames.at(-1)?.moduleLoad) {
@@ -213,6 +224,10 @@ export class VM {
                 this.step(this.bytecode.instructions[this.pc++]);
             }
             catch (reason) {
+                if (reason instanceof ResourceLimitError) {
+                    const point = this.bytecode.instructions[this.pc - 1];
+                    reason = new VMFailure({ line: point?.line ?? 1, column: point?.column ?? 1, category: "runtime", message: reason.message }, "RuntimeError", false);
+                }
                 if (reason instanceof ResumeExecution)
                     continue;
                 if (reason instanceof VMFailure && !reason.error.fileName && this.currentFile)
@@ -230,7 +245,7 @@ export class VM {
                     this.notify({ type: "error", error: { line: 1, column: 1, category: "runtime", message: "실행 중 오류가 발생했습니다." } });
             }
         }
-        if (!this.waiting && !this.stopped && !this.finished && this.asyncMode)
+        if (!this.transportHeld && !this.waiting && !this.stopped && !this.finished && this.asyncMode)
             this.batchTimer = setTimeout(() => { this.batchTimer = undefined; this.run(ASYNC_BATCH); }, 0);
     }
   private fail(instruction: Instruction, category: StudentError["category"], message: string): never { const type = category === "name" ? (message.includes("파일을 찾") ? "FileNotFoundError" : message.includes("속성") ? "AttributeError" : "NameError") : category === "type" ? "TypeError" : category === "value" ? (message.includes("0으로 나") ? "ZeroDivisionError" : message.includes("키가 없") ? "KeyError" : message.includes("위치") || message.includes("인덱스") ? "IndexError" : "ValueError") : "RuntimeError"; throw new VMFailure({ line: instruction.line, column: instruction.column, category, message }, type); }
@@ -397,8 +412,8 @@ export class VM {
         return this.fail(i, "value", "닫힌 파일은 사용할 수 없습니다."); if (file.mode === "r")
         return this.pythonFail(i, "UnsupportedOperation", "읽기 모드로 연 파일에는 쓸 수 없습니다."); if (typeof text !== "string")
         return this.fail(i, "type", "write()에는 문자열이 필요합니다."); const next = file.content.slice(0, file.position) + text + file.content.slice(file.position); if (new TextEncoder().encode(next).length > 1000000)
-        return this.fail(i, "runtime", "파일 하나는 1MB를 넘을 수 없습니다."); const total = [...this.files.entries()].reduce((sum, [name, content]) => sum + new TextEncoder().encode(name === file.name ? next : content).length, 0); if (total > 10000000)
-        return this.fail(i, "runtime", "전체 파일 용량은 10MB를 넘을 수 없습니다."); file.content = next; file.position += text.length; file.dirty = true; this.files.set(file.name, next); return [...text].length; }
+        return this.systemFail(i, "파일 하나는 1MB를 넘을 수 없습니다."); const total = [...this.files.entries()].reduce((sum, [name, content]) => sum + new TextEncoder().encode(name === file.name ? next : content).length, 0); if (total > 10000000)
+        return this.systemFail(i, "전체 파일 용량은 10MB를 넘을 수 없습니다."); file.content = next; file.position += text.length; file.dirty = true; this.files.set(file.name, next); return [...text].length; }
     private openFile(i: Instruction, args: Value[], keywords: Record<string, Value>): void { const allowed = new Set(["mode", "encoding"]); if (Object.keys(keywords).some(name => !allowed.has(name)) || args.length < 1 || args.length > 2)
         return this.fail(i, "type", "open() 인수가 올바르지 않습니다."); const name = args[0]; const mode = args[1] ?? keywords.mode ?? "r", encoding = keywords.encoding; if (args.length === 2 && keywords.mode !== undefined)
         return this.fail(i, "type", "mode 인수가 중복되었습니다."); if (typeof name !== "string")
@@ -418,9 +433,19 @@ export class VM {
         return this.fail(i, "value", "EUC-KR은 현재 읽기만 지원합니다. 쓰기는 UTF-8을 사용해 주세요."); const exists = this.files.has(name); const storedEncoding = this.options.fileEncodings?.get(name); if (mode === "r" && exists && storedEncoding && storedEncoding !== normalizedEncoding)
         return this.fail(i, "value", `이 파일을 ${normalizedEncoding === "euc-kr" ? "EUC-KR" : "UTF-8"}로 읽을 수 없습니다.`); if (mode === "r" && !exists)
         return this.fail(i, "name", `'${name}' 파일을 찾을 수 없습니다.`); if (!exists && this.files.size >= 100)
-        return this.fail(i, "runtime", "파일은 최대 100개까지 만들 수 있습니다."); const content = mode === "w" ? "" : this.files.get(name) ?? ""; const file: FileValue = { kind: "file", name, mode, content: mode === "r" ? content.replace(/\r\n?/g, "\n") : content, position: mode === "a" ? content.length : 0, closed: false, dirty: mode !== "r", }; this.files.set(name, content); if (file.dirty)
+        return this.systemFail(i, "파일은 최대 100개까지 만들 수 있습니다."); const content = mode === "w" ? "" : this.files.get(name) ?? ""; const file: FileValue = { kind: "file", name, mode, content: mode === "r" ? content.replace(/\r\n?/g, "\n") : content, position: mode === "a" ? content.length : 0, closed: false, dirty: mode !== "r", }; this.files.set(name, content); if (file.dirty)
         this.notify({ type: "file-change", name, content }); this.stack.push(file); }
     private step(instruction: Instruction): void {
+        const boundaries = fstringBoundariesOf(instruction);
+        if (boundaries) {
+            this.fstringBudgets ??= new WeakMap();
+            let budgets = this.fstringBudgets.get(this.stack);
+            if (!budgets) this.fstringBudgets.set(this.stack, budgets = new Map());
+            for (const boundary of boundaries) {
+                if (boundary.kind === "start") budgets.set(boundary.group, new TextBudget());
+                else if (!boundary.formatted) { const value = this.stack.at(-1); if (typeof value === "string") budgets.get(boundary.group)?.consume(value.length); }
+            }
+        }
         if (++this.instructionCount > MAX_INSTRUCTIONS)
             this.systemFail(instruction, "명령 실행 횟수 제한을 초과했습니다.");
         if (instruction.op === "binary" && instruction.inplace && instruction.operator === "+" && isList(this.stack.at(-2)!)) {
@@ -811,7 +836,7 @@ export class VM {
                 if (isFunction(callable) || plainPrint) {
                     const { args, keywords } = this.immediateArguments(instruction); this.pop(instruction);
                     if (isFunction(callable)) this.callFunction(instruction, callable, args, keywords);
-                    else { const { sep, end } = this.printOptions(instruction, keywords); this.emitPrint(instruction, args.map(printable).join(sep) + end); }
+                    else { const { sep, end } = this.printOptions(instruction, keywords), budget = new TextBudget("출력량 제한을 초과했습니다."); this.emitPrint(instruction, this.joinText(instruction, args.map(value => printable(value, budget)), sep, end, budget)); }
                     return;
                 }
             }
@@ -863,8 +888,17 @@ export class VM {
             return;
         }
         if (instruction.op === "format_value") {
-            const original = this.pop(instruction), value = isFloat(original) ? original.value : original, raw = (yield* this.stringValue(instruction, original));
+            const original = this.pop(instruction), value = isFloat(original) ? original.value : original;
+            const group = fstringOwnerOf(instruction), allocation = group && this.fstringBudgets?.get(this.stack)?.get(group);
+            if (instruction.format.kind === "fixed") {
+                const precision = instruction.format.precision;
+                if (!Number.isSafeInteger(precision) || precision < 0 || precision > RESOURCE_LIMITS.formatPrecision)
+                    this.systemFail(instruction, "f-string 정밀도 제한을 초과했습니다.");
+                allocation?.checkAdditional(1);
+            } else { checkTextLength(instruction.format.width); allocation?.checkAdditional(instruction.format.width); }
+            const raw = (yield* this.stringValue(instruction, original));
             if (instruction.format.kind === "align") {
+                allocation?.consume(Math.max(raw.length, instruction.format.width));
                 this.stack.push(instruction.format.align === "<" ? raw.padEnd(instruction.format.width) : instruction.format.align === ">" ? raw.padStart(instruction.format.width) : raw.length >= instruction.format.width ? raw : `${" ".repeat(Math.floor((instruction.format.width - raw.length) / 2))}${raw}${" ".repeat(Math.ceil((instruction.format.width - raw.length) / 2))}`);
                 return;
             }
@@ -872,17 +906,21 @@ export class VM {
                 if (isFloat(original) || typeof value !== "number" || !Number.isInteger(value))
                     this.fail(instruction, "type", "0 채움 형식에는 정수가 필요합니다.");
                 const sign = value < 0 ? "-" : "", digits = String(Math.abs(value));
+                allocation?.consume(Math.max(sign.length + digits.length, instruction.format.width));
                 this.stack.push(`${sign}${digits.padStart(Math.max(0, instruction.format.width - sign.length), "0")}`);
                 return;
             }
             if (typeof value !== "number")
                 this.fail(instruction, "type", "소수점 형식에는 숫자가 필요합니다.");
-            this.stack.push(value.toFixed(instruction.format.precision));
+            // toFixed has a separately bounded precision (at most 100), so its temporary
+            // scalar result is small even before it is charged to the enclosing f-string.
+            const fixed = value.toFixed(instruction.format.precision); allocation?.consume(fixed.length); this.stack.push(fixed);
             return;
         }
         if (instruction.op === "build_string") {
-            const values = this.stack.splice(this.stack.length - instruction.count);
-            this.stack.push((yield* mapTasks(values, (function* (this: VM, value: Value) { return (yield* this.stringValue(instruction, value)); }).bind(this))).join(""));
+            const values = this.stack.splice(this.stack.length - instruction.count), budget = new TextBudget();
+            this.stack.push((yield* mapTasks(values, (function* (this: VM, value: Value) { return (yield* this.stringValue(instruction, value, budget)); }).bind(this))).join(""));
+            const group = fstringOwnerOf(instruction); if (group) this.fstringBudgets?.get(this.stack)?.delete(group);
             return;
         }
         if (instruction.op === "unpack") {
@@ -1035,6 +1073,9 @@ export class VM {
         if (this.outputSize + text.length > MAX_OUTPUT) this.systemFail(i, "출력량 제한을 초과했습니다.");
         this.outputSize += text.length; this.notify({ type: "output", text }); this.stack.push(null);
     }
+    private joinText(i: Instruction, parts: string[], separator: string, end: string, budget: TextBudget): string {
+        return this.library(i, () => { budget.consume(Math.max(0, parts.length - 1) * separator.length + end.length); return parts.join(separator) + end; });
+    }
     private *unpack(i: Instruction, value: Value, pattern: UnpackPattern): RuntimeTask<Value[]> {
         if (pattern.kind === "leaf")
             return [value];
@@ -1140,9 +1181,9 @@ export class VM {
     private *requestCall(i: Instruction, callable: Value, args: Value[]): RuntimeTask<Value> {
         return yield { i, callable, args };
     }
-    private *stringValue(i: Instruction, value: Value): RuntimeTask<string> { if (typeof value === "string")
-        return value; if (isException(value))
-        return value.message; if (isInstance(value)) {
+    private *stringValue(i: Instruction, value: Value, budget = new TextBudget()): RuntimeTask<string> { if (typeof value === "string")
+        return this.library(i, () => { budget.visit(0); budget.consume(value.length); return value; }); if (isException(value))
+        return this.library(i, () => { budget.visit(0); budget.consume(value.message.length); return value.message; }); if (isInstance(value)) {
         const method = classAttribute(value.classValue, "__str__");
         if (method !== undefined) {
             if (!isFunction(method))
@@ -1150,9 +1191,9 @@ export class VM {
             const result = (yield* this.requestCall(i, method, [value]));
             if (typeof result !== "string")
                 this.fail(i, "type", "__str__()은 문자열을 반환해야 합니다.");
-            return result;
+            return this.library(i, () => { budget.visit(0); budget.consume(result.length); return result; });
         }
-    } return printable(value); }
+    } return this.library(i, () => printable(value, budget)); }
     private *items(i: Instruction, v: Value): RuntimeTask<Value[]> { if (isMap(v) || isIterator(v)) {
         const values: Value[] = [];
         let value: Value | undefined;
@@ -1337,9 +1378,14 @@ export class VM {
             }
             if ((typeof sequence === "string" || isList(sequence) || isTuple(sequence)) && (typeof times === "number" || typeof times === "boolean") && Number.isInteger(Number(times))) {
                 const amount = Math.max(0, Number(times)), length = typeof sequence === "string" ? sequence.length : sequence.items.length;
-                if (length * amount > (typeof sequence === "string" ? MAX_OUTPUT : MAX_COLLECTION_SIZE))
+                if (length === 0 || amount === 0) return typeof sequence === "string" ? "" : { kind: sequence.kind, items: [] };
+                const maximum = typeof sequence === "string" ? MAX_OUTPUT : MAX_COLLECTION_SIZE;
+                if (!Number.isSafeInteger(amount) || amount > Math.floor(maximum / length))
                     this.systemFail(i, "값의 크기 제한을 초과했습니다.");
-                return typeof sequence === "string" ? sequence.repeat(amount) : { kind: sequence.kind, items: Array.from({ length: amount }, () => sequence.items).flat() };
+                if (typeof sequence === "string") return sequence.repeat(amount);
+                const items: Value[] = new Array<Value>(length * amount);
+                for (let index = 0; index < items.length; index++) items[index] = sequence.items[index % length];
+                return { kind: sequence.kind, items };
             }
         }
         if (!numeric(left) || !numeric(right))
@@ -1585,7 +1631,8 @@ export class VM {
         }
         if (name === "print") {
             const { sep, end } = this.printOptions(i, keywords);
-            const text = (yield* mapTasks(args, (function* (this: VM, value: Value) { return (yield* this.stringValue(i, value)); }).bind(this))).join(sep) + end;
+            const budget = new TextBudget("출력량 제한을 초과했습니다.");
+            const text = this.joinText(i, (yield* mapTasks(args, (function* (this: VM, value: Value) { return (yield* this.stringValue(i, value, budget)); }).bind(this))), sep, end, budget);
             this.emitPrint(i, text);
             return;
         }

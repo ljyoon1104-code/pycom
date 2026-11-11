@@ -2,6 +2,7 @@ import type { Expr, FStringFormat, Name, Program, Statement, Target } from "./as
 import { lex } from "./lexer";
 import { pythonErrorNames } from "./python-errors";
 import { CompilerError, type Token } from "./token";
+import { RESOURCE_LIMITS } from "../runtime/resource-limits";
 
 const unsupported = new Set<string>();
 const errorTypes = pythonErrorNames;
@@ -306,6 +307,7 @@ export class Parser {
         if (!expression.trim()) this.fail(token, "f-string의 중괄호 안에는 표현식이 필요합니다.");
         let format: FStringFormat | undefined;
         if (spec !== undefined) {
+          if (spec.length > RESOURCE_LIMITS.formatSpecifierCharacters) this.fail(token, "f-string 형식 길이 제한을 초과했습니다.");
           const align = /^([<>^])([1-9][0-9]*)$/.exec(spec), zero = /^0([1-9][0-9]*)$/.exec(spec), fixed = /^\.([0-9]+)f$/.exec(spec);
           if (align) format = { kind: "align", align: align[1] as "<" | ">" | "^", width: Number(align[2]) };
           else if (zero) format = { kind: "zero", width: Number(zero[1]) };

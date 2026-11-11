@@ -1,5 +1,5 @@
 import type { Expr, Statement, Target } from "./ast";
-import { attachExecutionMetadata, type ExecutionSource, type ExecutionPoint, type Bytecode, type Instruction, type UnpackPattern } from "./opcode";
+import { attachExecutionMetadata, attachFStringBoundaries, attachFStringOwner, type FStringAllocationBoundary, type ExecutionSource, type ExecutionPoint, type Bytecode, type Instruction, type UnpackPattern } from "./opcode";
 import { CompilerError } from "./token";
 import { createEmission, point, type Loop } from "./emission";
 import { localNames } from "./local-names";
@@ -10,6 +10,8 @@ export function compileProgram(nodes: Statement[], functionScopes: ReadonlySet<s
   const points = new Map<number, ExecutionPoint>();
   const locations = new Map<number, ExecutionPoint>();
   let initialLoopGuards: Map<number, number> | undefined;
+  const allocationBoundaries = new Map<number, FStringAllocationBoundary[]>();
+  const allocationBoundary = (boundary: FStringAllocationBoundary) => { const boundaries = allocationBoundaries.get(instructions.length) ?? []; boundaries.push(boundary); allocationBoundaries.set(instructions.length, boundaries); };
   const locate = (token: { line: number; column: number }) => { if (executionSource) locations.set(instructions.length, { instruction: instructions.length, ...point(token) }); };
   const mark = (token: { line: number; column: number }) => { if (executionSource) { locate(token); points.set(instructions.length, { instruction: instructions.length, ...point(token) }); } };
 
@@ -73,7 +75,15 @@ export function compileProgram(nodes: Statement[], functionScopes: ReadonlySet<s
       case "slice": if (node.start) expression(node.start); if (node.stop) expression(node.stop); if (node.step) expression(node.step); emit({ op: "build_slice", hasStart: !!node.start, hasStop: !!node.stop, hasStep: !!node.step, ...point(node.token) }); return;
       case "subscript": expression(node.object); expression(node.index); emit({ op: "load_subscript", ...point(node.token) }); return;
       case "attribute": expression(node.object); emit({ op: "load_attr", name: node.name, ...point(node.token) }); return;
-      case "fstring": node.parts.forEach(part => { if (typeof part === "string") emit({ op: "constant", value: part, ...point(node.token) }); else { expression(part.expression); if (part.format) emit({ op: "format_value", format: part.format, ...point(node.token) }); } }); emit({ op: "build_string", count: node.parts.length, ...point(node.token) }); return;
+      case "fstring": {
+        const group = point(node.token); allocationBoundary({ group, kind: "start" });
+        node.parts.forEach(part => {
+          if (typeof part === "string") emit({ op: "constant", value: part, ...point(node.token) });
+          else { expression(part.expression); if (part.format) { const index = emit({ op: "format_value", format: part.format, ...point(node.token) }); attachFStringOwner(instructions[index], group); } }
+          allocationBoundary({ group, kind: "part", formatted: typeof part !== "string" && !!part.format });
+        });
+        const index = emit({ op: "build_string", count: node.parts.length, ...point(node.token) }); attachFStringOwner(instructions[index], group); return;
+      }
       case "call":
         if (node.callee.kind === "attribute") { expression(node.callee.object); node.args.forEach(expression); node.keywords.forEach(keyword => expression(keyword.value)); emit({ op: "call_method", name: node.callee.name, argc: node.args.length, spreads: node.args.map(value => value.kind === "starred"), keywords: node.keywords.map(keyword => keyword.name), ...point(node.token) }); }
         else { expression(node.callee); node.args.forEach(expression); node.keywords.forEach(keyword => expression(keyword.value)); emit({ op: "call_value", argc: node.args.length, spreads: node.args.map(value => value.kind === "starred"), keywords: node.keywords.map(keyword => keyword.name), ...point(node.token) }); }
@@ -212,6 +222,7 @@ export function compileProgram(nodes: Statement[], functionScopes: ReadonlySet<s
     const jump = emit({ op: "jump", target: node.kind === "break" ? -1 : loop.continueTarget, ...point(node.token) }); if (node.kind === "break") loop.breaks.push(jump);
   };
   body(nodes);
+  allocationBoundaries.forEach((boundaries, position) => attachFStringBoundaries(instructions[position], boundaries));
   const code = { instructions };
   return executionSource ? attachExecutionMetadata(code, { source: executionSource, points, locations, initialLoopGuards }) : code;
 }

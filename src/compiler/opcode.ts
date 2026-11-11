@@ -57,4 +57,13 @@ export interface ExecutionMetadata { source: ExecutionSource; points: ReadonlyMa
 const executionMetadata = new WeakMap<Bytecode, ExecutionMetadata>();
 export function attachExecutionMetadata(code: Bytecode, metadata: ExecutionMetadata): Bytecode { executionMetadata.set(code, metadata); return code; }
 export function executionMetadataOf(code: Bytecode): ExecutionMetadata | undefined { return executionMetadata.get(code); }
+// F-string allocation scopes are independent of debugging, and never serialized as opcodes.
+export type FStringAllocationGroup = SourcePoint;
+export type FStringAllocationBoundary = { group: FStringAllocationGroup; kind: "start" | "part"; formatted?: boolean };
+const fstringBoundaries = new WeakMap<Instruction, readonly FStringAllocationBoundary[]>();
+const fstringOwners = new WeakMap<Instruction, FStringAllocationGroup>();
+export function attachFStringBoundaries(instruction: Instruction, boundaries: readonly FStringAllocationBoundary[]): void { fstringBoundaries.set(instruction, boundaries); }
+export function fstringBoundariesOf(instruction: Instruction): readonly FStringAllocationBoundary[] | undefined { return fstringBoundaries.get(instruction); }
+export function attachFStringOwner(instruction: Instruction, group: FStringAllocationGroup): void { fstringOwners.set(instruction, group); }
+export function fstringOwnerOf(instruction: Instruction): FStringAllocationGroup | undefined { return fstringOwners.get(instruction); }
 export type CompileResult = { bytecode: Bytecode } | { error: StudentError };

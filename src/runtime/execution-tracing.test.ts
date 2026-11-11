@@ -7,7 +7,7 @@ function start(code: string, mode: ExecutionMode = "step", files = new Map<strin
   const events: VMEvent[] = [];
   const vm = new VM(compile(code, { sourceId: "entry", fileName: "main.py", code }), event => events.push(event), files, { fileName: "main.py", executionMode: mode });
   vm.execute();
-  const paused = () => events.filter(event => event.type === "execution").at(-1) as Extract<VMEvent, { type: "execution" }>;
+  const paused = () => { let index=events.length-1; while(index>=0 && events[index].type!=="execution")index--; return events[index] as Extract<VMEvent, { type: "execution" }>; };
   const next = () => { const ticket = paused()?.pauseId; if (ticket !== undefined) vm.advance(ticket); };
   const finish = () => { let n = 0; while (!['complete', 'error', 'input', 'stopped'].includes(events.at(-1)!.type) && ++n < 2000) { if (mode === 'follow') vi.runOnlyPendingTimers(); else next(); } expect(n).toBeLessThan(2000); };
   const lines = () => events.filter(event => event.type === "execution" && event.state === "paused").map(event => event.type === "execution" ? event.location!.line : 0);
